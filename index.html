@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF PEA Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a0e13;
+  --bg-panel:#0d1218;
+  --bg-card:#141a22;
+  --bg-card-hover:#182029;
+  --border:#232b36;
+  --border-soft:#1a212a;
+  --text:#e8ecf1;
+  --text-dim:#8993a4;
+  --text-faint:#5c6675;
+  --teal:#2fd7b3;
+  --teal-dim:#1a8f77;
+  --indigo:#7c8fff;
+  --amber:#f2b85c;
+  --rose:#f2617a;
+  --radius:14px;
+  --radius-sm:9px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(124,143,255,0.10), transparent 60%),
+    radial-gradient(1000px 500px at 0% 0%, rgba(47,215,179,0.08), transparent 55%),
+    var(--bg);
+  color:var(--text);
+  font-family:'Inter',sans-serif;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:rgba(47,215,179,0.3);}
+h1,h2,h3,.display{font-family:'Space Grotesk',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+a{color:inherit;}
+.wrap{max-width:1320px;margin:0 auto;padding:28px 28px 80px;}
+
+/* ---------- Header ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px;flex-wrap:wrap;gap:14px;}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--teal),var(--indigo));display:flex;align-items:center;justify-content:center;font-weight:700;color:#06110e;font-size:15px;}
+.brand-name{font-size:15px;font-weight:600;letter-spacing:0.2px;}
+.brand-tag{font-size:11px;color:var(--text-faint);margin-top:1px;}
+.pill{font-size:11.5px;padding:6px 12px;border-radius:100px;border:1px solid var(--border);color:var(--text-dim);background:var(--bg-card);}
+
+.hero{display:grid;grid-template-columns:1.05fr 1fr;gap:28px;margin-bottom:34px;align-items:stretch;}
+@media (max-width:980px){.hero{grid-template-columns:1fr;}}
+.hero-text h1{font-size:34px;line-height:1.15;margin:0 0 14px;font-weight:600;letter-spacing:-0.3px;}
+.hero-text h1 span{background:linear-gradient(100deg,var(--teal),var(--indigo));-webkit-background-clip:text;background-clip:text;color:transparent;}
+.hero-text p{color:var(--text-dim);font-size:14.5px;line-height:1.65;max-width:520px;margin:0 0 18px;}
+.hero-stats{display:flex;gap:26px;margin-top:22px;flex-wrap:wrap;}
+.hero-stat b{display:block;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:600;}
+.hero-stat span{font-size:11.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px;}
+
+.hero-chart{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 8px;position:relative;overflow:hidden;}
+.hero-chart::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 60px rgba(47,215,179,0.03);}
+.hero-chart-title{font-size:12px;color:var(--text-faint);display:flex;justify-content:space-between;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.6px;}
+.hero-chart canvas{max-height:260px;}
+
+/* ---------- Layout ---------- */
+.layout{display:grid;grid-template-columns:270px 1fr;gap:24px;align-items:start;}
+@media (max-width:980px){.layout{grid-template-columns:1fr;}}
+
+.panel{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;}
+.panel + .panel{margin-top:18px;}
+.panel-title{font-size:12.5px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-faint);margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;}
+
+.sidebar{position:sticky;top:20px;}
+@media (max-width:980px){
+  .sidebar{position:static;}
+}
+.filter-toggle{display:none;}
+.panel-title.filter-head{cursor:pointer;}
+@media (max-width:980px){
+  .filter-toggle{display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);font-size:11.5px;padding:5px 10px;border-radius:100px;}
+  .filter-toggle svg{transition:transform .18s ease;}
+  .filter-toggle.open svg{transform:rotate(180deg);}
+  #filterBody{display:none;}
+  #filterBody.open{display:block;}
+}
+.filter-group{margin-bottom:18px;}
+.filter-label{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;display:block;font-weight:500;}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{font-size:12px;padding:6px 11px;border-radius:100px;border:1px solid var(--border);color:var(--text-dim);cursor:pointer;user-select:none;transition:all .15s ease;background:var(--bg-card);}
+.chip:hover{border-color:var(--teal-dim);color:var(--text);}
+.chip.active{background:rgba(47,215,179,0.14);border-color:var(--teal);color:var(--teal);}
+.range-row{display:flex;align-items:center;gap:10px;}
+input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:4px;background:var(--border);}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--teal);cursor:pointer;box-shadow:0 0 0 4px rgba(47,215,179,0.15);}
+.range-val{font-size:12px;color:var(--teal);min-width:44px;text-align:right;font-family:'IBM Plex Mono',monospace;}
+.search-input{width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:13px;font-family:'Inter',sans-serif;}
+.search-input:focus{outline:none;border-color:var(--teal-dim);}
+.note{font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-top:4px;}
+.reset-link{font-size:11.5px;color:var(--indigo);cursor:pointer;text-decoration:underline;text-underline-offset:2px;background:none;border:none;padding:0;font-family:inherit;}
+
+/* ---------- Table ---------- */
+.table-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;}
+.table-toolbar .count{font-size:12.5px;color:var(--text-dim);}
+.table-scroll{overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--border-soft);}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:880px;}
+thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-faint);font-weight:500;padding:11px 12px;background:var(--bg-card);border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;position:sticky;top:0;}
+thead th:hover{color:var(--teal);}
+thead th.sorted{color:var(--teal);}
+tbody td{padding:11px 12px;border-bottom:1px solid var(--border-soft);white-space:nowrap;}
+tbody tr{transition:background .12s ease;}
+tbody tr:hover{background:var(--bg-card-hover);}
+tbody tr.selected{background:rgba(47,215,179,0.06);}
+.name-cell{display:flex;flex-direction:column;gap:1px;}
+.name-cell b{font-size:13px;font-weight:600;}
+.name-cell .isin{font-size:10.5px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;}
+.cat-badge{font-size:10.5px;padding:3px 8px;border-radius:100px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);}
+.num-pos{color:var(--teal);font-family:'IBM Plex Mono',monospace;}
+.num-vol{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
+.num{font-family:'IBM Plex Mono',monospace;}
+.checkbox-cell{text-align:center;}
+.chk{width:16px;height:16px;accent-color:var(--teal);cursor:pointer;}
+
+/* ---------- Selected tray ---------- */
+.tray{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.tray-chip{display:flex;align-items:center;gap:7px;background:var(--bg-card);border:1px solid var(--border);padding:6px 6px 6px 12px;border-radius:100px;font-size:12px;}
+.tray-chip button{background:none;border:none;color:var(--text-faint);cursor:pointer;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;}
+.tray-chip button:hover{background:rgba(242,97,122,0.15);color:var(--rose);}
+.tray-empty{font-size:12.5px;color:var(--text-faint);}
+
+/* ---------- Comparison ---------- */
+.metric-toggle{display:flex;gap:6px;}
+.metric-toggle button{font-size:11.5px;padding:5px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;}
+.metric-toggle button.active{background:rgba(124,143,255,0.15);border-color:var(--indigo);color:var(--indigo);}
+
+/* ---------- Optimizer ---------- */
+.obj-options{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;}
+.obj-option{border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;cursor:pointer;transition:all .15s ease;}
+.obj-option:hover{border-color:var(--teal-dim);}
+.obj-option.active{border-color:var(--teal);background:rgba(47,215,179,0.06);}
+.obj-option .t{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;}
+.obj-option .d{font-size:12px;color:var(--text-dim);margin-top:3px;line-height:1.4;}
+.radio-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;position:relative;}
+.obj-option.active .radio-dot{border-color:var(--teal);}
+.obj-option.active .radio-dot::after{content:"";position:absolute;inset:2px;border-radius:50%;background:var(--teal);}
+.target-slider{margin-top:12px;padding-top:12px;border-top:1px solid var(--border-soft);}
+.run-btn{width:100%;padding:13px;border-radius:10px;border:none;background:linear-gradient(100deg,var(--teal),var(--indigo));color:#06110e;font-weight:700;font-size:14px;cursor:pointer;margin-top:6px;font-family:'Space Grotesk',sans-serif;letter-spacing:0.2px;transition:transform .1s ease, opacity .15s ease;}
+.run-btn:hover{transform:translateY(-1px);}
+.run-btn:disabled{opacity:0.45;cursor:not-allowed;transform:none;}
+.invest-input{display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:14px;}
+.invest-input input{background:none;border:none;color:var(--text);font-size:14px;width:100%;font-family:'IBM Plex Mono',monospace;}
+.invest-input input:focus{outline:none;}
+.invest-input span{color:var(--text-faint);font-size:13px;}
+
+.results-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;}
+@media (max-width:640px){.results-grid{grid-template-columns:1fr;}}
+.metric-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;}
+.metric-card .label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+.metric-card .value{font-family:'Space Grotesk',sans-serif;font-size:23px;font-weight:600;}
+.metric-card .value.teal{color:var(--teal);}
+.metric-card .value.amber{color:var(--amber);}
+.metric-card .value.indigo{color:var(--indigo);}
+
+.alloc-wrap{display:grid;grid-template-columns:220px 1fr;gap:22px;align-items:center;}
+@media (max-width:760px){.alloc-wrap{grid-template-columns:1fr;}}
+.alloc-list{display:flex;flex-direction:column;gap:9px;}
+.alloc-row{display:flex;align-items:center;gap:10px;font-size:13px;}
+.alloc-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+.alloc-name{flex:1;color:var(--text);}
+.alloc-w{font-family:'IBM Plex Mono',monospace;color:var(--text-dim);min-width:52px;text-align:right;}
+.alloc-amt{font-family:'IBM Plex Mono',monospace;color:var(--teal);min-width:82px;text-align:right;}
+
+.placeholder{color:var(--text-faint);font-size:13px;text-align:center;padding:50px 20px;line-height:1.6;}
+.placeholder b{color:var(--text-dim);}
+
+.disclaimer{margin-top:34px;padding:16px 18px;border-radius:var(--radius-sm);border:1px solid var(--border-soft);background:var(--bg-panel);font-size:12px;color:var(--text-faint);line-height:1.6;}
+.disclaimer b{color:var(--text-dim);}
+
+.footer-links{margin-top:14px;display:flex;gap:16px;font-size:12px;color:var(--text-faint);}
+
+@media (max-width:640px){
+  .wrap{padding:18px 14px 60px;}
+  .hero-text h1{font-size:26px;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">Σ</div>
+      <div>
+        <div class="brand-name">ETF PEA Optimizer</div>
+        <div class="brand-tag">Univers Trade Republic · PEA · Capitalisant · EUR</div>
+      </div>
+    </div>
+    <div class="pill">Données indicatives — usage pédagogique, non contractuel</div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-text">
+      <h1>Construisez un portefeuille<br><span>d'ETF optimisé</span>, sans le bruit.</h1>
+      <p>Filtrez l'univers des ETF éligibles au PEA disponibles sur Trade Republic (capitalisants, cotés en euro), comparez frais / performance / volatilité, puis laissez un algorithme d'optimisation (CMA-ES) trouver l'allocation qui maximise le couple rendement/risque.</p>
+      <div class="hero-stats">
+        <div class="hero-stat"><b id="statCount">—</b><span>ETF référencés</span></div>
+        <div class="hero-stat"><b id="statCats">—</b><span>Zones géographiques</span></div>
+        <div class="hero-stat"><b>CMA-ES</b><span>Moteur d'optimisation</span></div>
+      </div>
+    </div>
+    <div class="hero-chart">
+      <div class="hero-chart-title"><span>Risque / Rendement — univers complet</span><span id="heroCount">14 ETF</span></div>
+      <canvas id="heroScatter"></canvas>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- SIDEBAR FILTERS -->
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-title filter-head" id="filterHead" onclick="toggleFilters()">
+          Filtres
+          <span style="display:flex;align-items:center;gap:10px;">
+            <button class="reset-link" onclick="event.stopPropagation();resetFilters()">réinitialiser</button>
+            <button class="filter-toggle" id="filterToggleBtn" type="button">Afficher/masquer
+              <svg width="10" height="10" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          </span>
+        </div>
+
+        <div id="filterBody" class="open">
+          <div class="filter-group">
+            <label class="filter-label">Recherche</label>
+            <input class="search-input" id="searchInput" placeholder="Nom, ISIN, indice…" oninput="renderTable()">
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Zone géographique</label>
+            <div class="chip-row" id="catChips"></div>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Politique de distribution</label>
+            <div class="chip-row" id="distChips"></div>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Devise de cotation</label>
+            <div class="chip-row" id="ccyChips"></div>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Frais annuels (TER) max</label>
+            <div class="range-row">
+              <input type="range" id="terRange" min="0.05" max="0.6" step="0.01" value="0.6" oninput="renderTable()">
+              <span class="range-val mono" id="terRangeVal">0.60%</span>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Encours minimum</label>
+            <div class="range-row">
+              <input type="range" id="fundRange" min="0" max="7500" step="50" value="0" oninput="renderTable()">
+              <span class="range-val mono" id="fundRangeVal">0M€</span>
+            </div>
+          </div>
+
+          <div class="note">Le PEA impose des ETF domiciliés en UE, cotés en euro et réglementés UCITS : l'univers disponible est par nature restreint et très majoritairement capitalisant.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main">
+
+      <div class="panel">
+        <div class="table-toolbar">
+          <div class="panel-title" style="margin:0;">Univers d'ETF filtré</div>
+          <div class="count" id="resultCount">— résultats</div>
+        </div>
+        <div class="table-toolbar" style="margin-top:-4px;flex-wrap:wrap;">
+          <button class="filter-toggle" style="display:inline-flex;" id="yahooBtn" onclick="refreshFromYahoo()">↻ Actualiser depuis le backend</button>
+          <div class="invest-input" style="margin:0;padding:5px 10px;">
+            <span style="white-space:nowrap;">Backend :</span>
+            <input type="text" id="backendUrl" value="" placeholder="laisser vide si héberg. avec cette page" style="width:220px;font-size:12.5px;">
+          </div>
+          <div class="count" id="yahooStatus" style="flex-basis:100%;">Données estimées par défaut · non actualisées. Si cette page est servie par son propre backend (ex. déployée sur Render), laissez le champ vide. Sinon, renseignez l'URL de votre backend (ex. http://localhost:8000 ou https://votre-backend.onrender.com). Le premier appel après une période d'inactivité peut prendre jusqu'à une minute (le service gratuit "se réveille").</div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th data-sort="name">ETF</th>
+                <th data-sort="category">Zone</th>
+                <th data-sort="ter">TER</th>
+                <th data-sort="ret">Rendement annualisé</th>
+                <th data-sort="vol">Volatilité</th>
+                <th data-sort="sharpe">Rend./Vol.</th>
+                <th data-sort="fundSize">Encours</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="tray" id="selectionTray"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">
+          Comparaison des ETF sélectionnés
+          <div class="metric-toggle" id="metricToggle">
+            <button class="active" data-metric="ter">Frais</button>
+            <button data-metric="ret">Rendement</button>
+            <button data-metric="vol">Volatilité</button>
+          </div>
+        </div>
+        <div id="compareWrap">
+          <div class="placeholder">Sélectionnez au moins un ETF dans le tableau ci-dessus (case à cocher) pour afficher la comparaison.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Optimisation de portefeuille</div>
+
+        <div class="obj-options" id="objOptions"></div>
+
+        <div class="invest-input">
+          <span>Montant à investir</span>
+          <input type="number" id="investAmount" value="10000" min="0" step="100">
+          <span>€</span>
+        </div>
+
+        <button class="run-btn" id="runBtn" onclick="runOptimization()">Lancer l'optimisation (CMA-ES)</button>
+        <div class="note" id="optNote" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="panel" id="resultsPanel" style="display:none;">
+        <div class="panel-title">Portefeuille optimal</div>
+        <div class="results-grid">
+          <div class="metric-card">
+            <div class="label">Rendement annualisé attendu</div>
+            <div class="value teal" id="resRet">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Volatilité annualisée attendue</div>
+            <div class="value amber" id="resVol">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Ratio rendement / volatilité</div>
+            <div class="value indigo" id="resSharpe">—</div>
+          </div>
+        </div>
+        <div class="alloc-wrap">
+          <canvas id="allocDonut"></canvas>
+          <div class="alloc-list" id="allocList"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="frontierPanel" style="display:none;">
+        <div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente (indicatif)</div>
+        <canvas id="frontierScatter" height="110"></canvas>
+      </div>
+
+      <div class="disclaimer">
+        <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. Les données de frais et d'encours sont issues d'une sélection publique d'ETF communément proposés sur le PEA ; par défaut, les rendements et volatilités sont des <b>estimations indicatives</b> basées sur les caractéristiques historiques générales des indices suivis, et non des séries de cours réelles à jour. Le bouton « Actualiser depuis le backend » interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer un rendement et une volatilité réalisés sur 3 ans à partir des cours de clôture hebdomadaires réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. En cas d'échec, l'estimation initiale est conservée et signalée comme telle (badge « Estimé », avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution (capitalisant/distribuant) et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
+        <div class="footer-links"><span>Trade Republic — instruments éligibles PEA</span><span>Sources : fiches ETF des émetteurs (Amundi, iShares, BNP Paribas Easy)</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   1. DONNÉES — univers d'ETF (capitalisants, EUR, éligibles PEA)
+   ===================================================================== */
+const ASSETS = [
+  {id:'wld1', name:'Amundi PEA Monde (MSCI World)', isin:'FR001400U5Q4', category:'Monde', index:'MSCI World', ter:0.20, fundSize:1000, ret:9.8, vol:14.5, region:{us:0.65,eu:0.20,em:0.15}},
+  {id:'wld2', name:'iShares MSCI World Swap PEA', isin:'IE0002XZSHO1', category:'Monde', index:'MSCI World', ter:0.20, fundSize:1600, ret:9.9, vol:14.4, region:{us:0.65,eu:0.20,em:0.15}},
+  {id:'us1', name:'BNP Paribas Easy S&P 500', isin:'FR0011550185', category:'USA', index:'S&P 500', ter:0.14, fundSize:1400, ret:12.0, vol:15.0, region:{us:1}},
+  {id:'us2', name:'Amundi PEA S&P 500 Screened', isin:'FR0013412285', category:'USA', index:'S&P 500 Scored & Screened+', ter:0.25, fundSize:990, ret:11.6, vol:15.2, region:{us:1}},
+  {id:'us3', name:'Amundi PEA Nasdaq-100', isin:'FR0011871110', category:'USA', index:'Nasdaq 100', ter:0.30, fundSize:1100, ret:15.5, vol:20.5, region:{us:1}},
+  {id:'eu1', name:'iShares Core Euro Stoxx 50', isin:'IE00B53L3W79', category:'Europe', index:'EURO STOXX 50', ter:0.10, fundSize:7400, ret:8.0, vol:16.8, region:{eu:1}},
+  {id:'eu2', name:'BNP Paribas Easy Stoxx Europe 600', isin:'FR0011550193', category:'Europe', index:'STOXX Europe 600', ter:0.19, fundSize:1000, ret:7.6, vol:15.3, region:{eu:1}},
+  {id:'eu3', name:'Amundi S&P Eurozone PAB Net Zero', isin:'LU2195226068', category:'Europe', index:'S&P Eurozone Paris-Aligned ESG', ter:0.20, fundSize:2600, ret:7.2, vol:16.0, region:{eu:1}},
+  {id:'fr1', name:'Amundi CAC 40', isin:'FR0013380607', category:'France', index:'CAC 40', ter:0.25, fundSize:800, ret:7.0, vol:17.2, region:{eu:1}},
+  {id:'de1', name:'iShares Core DAX', isin:'DE0005933931', category:'Allemagne', index:'DAX', ter:0.16, fundSize:6000, ret:9.2, vol:18.0, region:{eu:1}},
+  {id:'it1', name:'Amundi FTSE MIB', isin:'FR0010010827', category:'Italie', index:'FTSE MIB', ter:0.35, fundSize:400, ret:8.3, vol:19.0, region:{eu:1}},
+  {id:'em1', name:'Amundi PEA Emerging Markets ESG Leaders', isin:'FR0013412020', category:'Émergents', index:'MSCI EM ESG Leaders', ter:0.30, fundSize:820, ret:5.2, vol:18.3, region:{em:1}},
+  {id:'em2', name:'Amundi PEA MSCI Emerging EMEA ESG Leaders', isin:'FR0011440478', category:'Émergents', index:'MSCI EM EMEA ESG Leaders', ter:0.55, fundSize:70, ret:4.0, vol:20.5, region:{em:0.7,eu:0.3}},
+  {id:'val1', name:'Amundi MSCI EMU Value Factor', isin:'LU1598690169', category:'Smart Beta', index:'MSCI EMU Value Factor', ter:0.40, fundSize:250, ret:6.8, vol:16.5, region:{eu:1}},
+  {id:'mon1', name:'Amundi PEA Euro Court Terme', isin:'FR0013346681', category:'Monétaire', index:'€STR / Euro court terme', ter:0.25, fundSize:300, ret:2.7, vol:0.4, region:{}, cash:true},
+];
+ASSETS.forEach(a=>{ a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05); a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; });
+
+const CATS = [...new Set(ASSETS.map(a=>a.category))];
+const CAT_COLORS = {
+  'Monde':'#2fd7b3','USA':'#7c8fff','Europe':'#f2b85c','France':'#f2617a','Allemagne':'#c792ea',
+  'Italie':'#5cc9f2','Émergents':'#f28c5c','Smart Beta':'#9ad65c','Monétaire':'#8993a4'
+};
+
+/* =====================================================================
+   2. ETAT
+   ===================================================================== */
+let state = {
+  cats: new Set(CATS),
+  dist: new Set(['Capitalisant']),
+  ccy: new Set(['EUR']),
+  selected: new Set(['wld1','us1','eu2','em1']),
+  sort: {key:'ret', dir:-1},
+  metric: 'ter',
+  objective: 'sharpe',
+  targetVol: 12,
+  targetReturn: 8,
+};
+
+/* =====================================================================
+   3. FILTRES UI
+   ===================================================================== */
+function buildChips(containerId, values, activeSet, onToggle){
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  values.forEach(v=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (activeSet.has(v) ? ' active':'');
+    c.textContent = v;
+    c.onclick = ()=>{ onToggle(v); };
+    el.appendChild(c);
+  });
+}
+function initFilters(){
+  buildChips('catChips', CATS, state.cats, (v)=>{
+    if(state.cats.has(v)) state.cats.delete(v); else state.cats.add(v);
+    initFilters(); renderTable();
+  });
+  buildChips('distChips', ['Capitalisant','Distribuant'], state.dist, (v)=>{
+    if(state.dist.has(v)) state.dist.delete(v); else state.dist.add(v);
+    initFilters(); renderTable();
+  });
+  buildChips('ccyChips', ['EUR','USD'], state.ccy, (v)=>{
+    if(state.ccy.has(v)) state.ccy.delete(v); else state.ccy.add(v);
+    initFilters(); renderTable();
+  });
+  document.getElementById('terRangeVal').textContent = document.getElementById('terRange').value + '%';
+  document.getElementById('fundRangeVal').textContent = document.getElementById('fundRange').value + 'M€';
+}
+function resetFilters(){
+  state.cats = new Set(CATS); state.dist = new Set(['Capitalisant']); state.ccy = new Set(['EUR']);
+  document.getElementById('searchInput').value='';
+  document.getElementById('terRange').value = 0.6;
+  document.getElementById('fundRange').value = 0;
+  initFilters(); renderTable();
+}
+document.getElementById('terRange').addEventListener('input', e=>{
+  document.getElementById('terRangeVal').textContent = parseFloat(e.target.value).toFixed(2)+'%';
+});
+document.getElementById('fundRange').addEventListener('input', e=>{
+  document.getElementById('fundRangeVal').textContent = e.target.value+'M€';
+});
+
+function filteredAssets(){
+  const term = document.getElementById('searchInput').value.trim().toLowerCase();
+  const terMax = parseFloat(document.getElementById('terRange').value);
+  const fundMin = parseFloat(document.getElementById('fundRange').value);
+  return ASSETS.filter(a=>{
+    if(!state.cats.has(a.category)) return false;
+    if(!state.dist.has(a.dist)) return false;
+    if(!state.ccy.has(a.currency)) return false;
+    if(a.ter > terMax) return false;
+    if(a.fundSize < fundMin) return false;
+    if(term && !(a.name.toLowerCase().includes(term) || a.isin.toLowerCase().includes(term) || a.index.toLowerCase().includes(term))) return false;
+    return true;
+  });
+}
+
+/* =====================================================================
+   4. TABLEAU
+   ===================================================================== */
+function sortAssets(list){
+  const {key,dir} = state.sort;
+  return [...list].sort((a,b)=>{
+    let va=a[key], vb=b[key];
+    if(typeof va === 'string') return va.localeCompare(vb)*dir;
+    return (va-vb)*dir;
+  });
+}
+document.querySelectorAll('thead th[data-sort]').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.getAttribute('data-sort');
+    if(state.sort.key===key) state.sort.dir *= -1; else state.sort = {key, dir:-1};
+    renderTable();
+  });
+});
+
+function renderTable(){
+  const list = sortAssets(filteredAssets());
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  document.getElementById('resultCount').textContent = list.length + ' résultat' + (list.length>1?'s':'');
+  document.querySelectorAll('thead th[data-sort]').forEach(th=>{
+    th.classList.toggle('sorted', th.getAttribute('data-sort')===state.sort.key);
+  });
+
+  list.forEach(a=>{
+    const tr = document.createElement('tr');
+    tr.className = state.selected.has(a.id) ? 'selected' : '';
+    tr.innerHTML = `
+      <td class="checkbox-cell"><input type="checkbox" class="chk" ${state.selected.has(a.id)?'checked':''} data-id="${a.id}"></td>
+      <td><div class="name-cell"><b>${a.name}</b><span class="isin">${a.isin} · ${a.index}</span></div></td>
+      <td><span class="cat-badge">${a.category}</span></td>
+      <td class="num">${a.ter.toFixed(2)}%</td>
+      <td class="num-pos">+${a.ret.toFixed(1)}%</td>
+      <td class="num-vol">${a.vol.toFixed(1)}%</td>
+      <td class="num">${a.sharpe.toFixed(2)}</td>
+      <td class="num">${a.fundSize.toLocaleString('fr-FR')}M€</td>
+      <td>${a.liveData ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Calculé à partir des cours réels Yahoo Finance (${a.yahooSymbol||''}), ${a.liveAt?a.liveAt.toLocaleString('fr-FR'):''}">● Live</span>` : `<span class="cat-badge" title="Estimation indicative${a.lastError?(' — échec de la dernière actualisation : '+a.lastError):''}">○ Estimé</span>`}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('.chk').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      const id = e.target.getAttribute('data-id');
+      if(e.target.checked) state.selected.add(id); else state.selected.delete(id);
+      renderTable(); renderTray(); renderCompare(); resetResults();
+    });
+  });
+
+  renderTray();
+  renderCompare();
+}
+
+function renderTray(){
+  const tray = document.getElementById('selectionTray');
+  tray.innerHTML = '';
+  if(state.selected.size===0){
+    tray.innerHTML = '<div class="tray-empty">Aucun ETF sélectionné pour l\'instant.</div>';
+    return;
+  }
+  [...state.selected].forEach(id=>{
+    const a = ASSETS.find(x=>x.id===id);
+    if(!a) return;
+    const chip = document.createElement('div');
+    chip.className='tray-chip';
+    chip.innerHTML = `<span>${a.name}</span><button data-id="${id}">×</button>`;
+    chip.querySelector('button').onclick = ()=>{ state.selected.delete(id); renderTable(); resetResults(); };
+    tray.appendChild(chip);
+  });
+}
+
+/* =====================================================================
+   5. GRAPHIQUE HERO (nuage complet)
+   ===================================================================== */
+let heroChart;
+function renderHero(){
+  document.getElementById('statCount').textContent = ASSETS.length;
+  document.getElementById('statCats').textContent = CATS.length;
+  document.getElementById('heroCount').textContent = ASSETS.length + ' ETF';
+  const ctx = document.getElementById('heroScatter');
+  const byCat = {};
+  ASSETS.forEach(a=>{ (byCat[a.category] = byCat[a.category]||[]).push(a); });
+  const datasets = Object.keys(byCat).map(cat=>({
+    label: cat,
+    data: byCat[cat].map(a=>({x:a.vol, y:a.ret, label:a.name})),
+    backgroundColor: CAT_COLORS[cat],
+    pointRadius:6, pointHoverRadius:8,
+  }));
+  if(heroChart) heroChart.destroy();
+  heroChart = new Chart(ctx, {
+    type:'scatter',
+    data:{datasets},
+    options:{
+      responsive:true,
+      plugins:{
+        legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
+        tooltip:{callbacks:{label:(c)=>`${c.raw.label}: ${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}% vol`}}
+      },
+      scales:{
+        x:{title:{display:true,text:'Volatilité annualisée (%)',color:'#5c6675',font:{size:10.5}},grid:{color:'#1a212a'},ticks:{color:'#5c6675',font:{size:10}}},
+        y:{title:{display:true,text:'Rendement annualisé estimé (%)',color:'#5c6675',font:{size:10.5}},grid:{color:'#1a212a'},ticks:{color:'#5c6675',font:{size:10}}}
+      }
+    }
+  });
+}
+
+/* =====================================================================
+   6. COMPARAISON (bar chart)
+   ===================================================================== */
+let compareChart;
+document.getElementById('metricToggle').addEventListener('click', e=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  document.querySelectorAll('#metricToggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  state.metric = btn.getAttribute('data-metric');
+  renderCompare();
+});
+
+function renderCompare(){
+  const wrap = document.getElementById('compareWrap');
+  const list = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
+  if(list.length===0){
+    wrap.innerHTML = '<div class="placeholder">Sélectionnez au moins un ETF dans le tableau ci-dessus (case à cocher) pour afficher la comparaison.</div>';
+    return;
+  }
+  if(!wrap.querySelector('canvas')){
+    wrap.innerHTML = '<canvas id="compareCanvas" height="90"></canvas>';
+  }
+  const ctx = document.getElementById('compareCanvas');
+  const metricConf = {
+    ter:{label:'Frais annuels (TER, %)', color:'#f2617a'},
+    ret:{label:'Rendement annualisé estimé (%)', color:'#2fd7b3'},
+    vol:{label:'Volatilité annualisée estimée (%)', color:'#f2b85c'},
+  }[state.metric];
+  const data = {
+    labels: list.map(a=>a.name.length>28 ? a.name.slice(0,26)+'…' : a.name),
+    datasets:[{ label: metricConf.label, data: list.map(a=>a[state.metric]), backgroundColor: metricConf.color, borderRadius:5, maxBarThickness:38 }]
+  };
+  if(compareChart) compareChart.destroy();
+  compareChart = new Chart(ctx, {
+    type:'bar',
+    data,
+    options:{
+      responsive:true,
+      indexAxis: list.length>5 ? 'y' : 'x',
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{color:'#1a212a'}, ticks:{color:'#8993a4', font:{size:11}}},
+        y:{grid:{color:'#1a212a'}, ticks:{color:'#8993a4', font:{size:11}}}
+      }
+    }
+  });
+}
+
+/* =====================================================================
+   7. OBJECTIFS D'OPTIMISATION UI
+   ===================================================================== */
+const OBJECTIVES = [
+  {id:'sharpe', t:'Maximiser rendement / volatilité', d:'Trouve l\'allocation avec le meilleur couple rendement-risque (ratio de type Sharpe), sans autre contrainte.'},
+  {id:'maxReturnAtVol', t:'Maximiser le rendement à volatilité max donnée', d:'Cherche le rendement le plus élevé possible sans dépasser une volatilité annualisée cible.'},
+  {id:'minVolAtReturn', t:'Minimiser la volatilité à rendement min donné', d:'Cherche l\'allocation la moins volatile atteignant au moins un rendement annualisé cible.'},
+];
+function renderObjectives(){
+  const el = document.getElementById('objOptions');
+  el.innerHTML='';
+  OBJECTIVES.forEach(o=>{
+    const div = document.createElement('div');
+    div.className = 'obj-option' + (state.objective===o.id ? ' active':'');
+    div.innerHTML = `<div class="t"><span class="radio-dot"></span>${o.t}</div><div class="d">${o.d}</div>`;
+    if(o.id==='maxReturnAtVol' && state.objective==='maxReturnAtVol'){
+      div.innerHTML += `<div class="target-slider"><div class="range-row"><input type="range" id="volTarget" min="3" max="25" step="0.5" value="${state.targetVol}"><span class="range-val mono" id="volTargetVal">${state.targetVol}%</span></div></div>`;
+    }
+    if(o.id==='minVolAtReturn' && state.objective==='minVolAtReturn'){
+      div.innerHTML += `<div class="target-slider"><div class="range-row"><input type="range" id="retTarget" min="3" max="18" step="0.5" value="${state.targetReturn}"><span class="range-val mono" id="retTargetVal">${state.targetReturn}%</span></div></div>`;
+    }
+    div.onclick = (e)=>{
+      if(e.target.tagName==='INPUT') return;
+      state.objective = o.id; renderObjectives();
+    };
+    el.appendChild(div);
+  });
+  const vt = document.getElementById('volTarget');
+  if(vt) vt.addEventListener('input', e=>{ state.targetVol = parseFloat(e.target.value); document.getElementById('volTargetVal').textContent = state.targetVol+'%'; });
+  const rt = document.getElementById('retTarget');
+  if(rt) rt.addEventListener('input', e=>{ state.targetReturn = parseFloat(e.target.value); document.getElementById('retTargetVal').textContent = state.targetReturn+'%'; });
+}
+
+/* =====================================================================
+   8. MATHS — corrélation, covariance, CMA-ES
+   ===================================================================== */
+function cosineSim(a,b){
+  const keys=['us','eu','em'];
+  let d=0,na=0,nb=0;
+  keys.forEach(k=>{ d+=(a[k]||0)*(b[k]||0); na+=(a[k]||0)**2; nb+=(b[k]||0)**2; });
+  if(na===0||nb===0) return 0;
+  return d/(Math.sqrt(na)*Math.sqrt(nb));
+}
+function correlation(assetA, assetB){
+  if(assetA.id===assetB.id) return 1;
+  if(assetA.cash || assetB.cash) return 0.03;
+  const cs = cosineSim(assetA.region, assetB.region);
+  return Math.max(0.05, Math.min(0.98, 0.15 + 0.83*cs));
+}
+function buildMuSigma(list){
+  const n = list.length;
+  const mu = list.map(a=>a.ret/100);
+  const Sigma = [];
+  for(let i=0;i<n;i++){
+    const row=[];
+    for(let j=0;j<n;j++){
+      const corr = correlation(list[i], list[j]);
+      row.push(corr * (list[i].vol/100) * (list[j].vol/100));
+    }
+    Sigma.push(row);
+  }
+  return {mu, Sigma};
+}
+
+// --- vector/matrix helpers ---
+const zeros = n => new Array(n).fill(0);
+const eye = n => { const m=[]; for(let i=0;i<n;i++){ const r=zeros(n); r[i]=1; m.push(r);} return m; };
+const vAdd=(a,b)=>a.map((x,i)=>x+b[i]);
+const vSub=(a,b)=>a.map((x,i)=>x-b[i]);
+const vScale=(a,s)=>a.map(x=>x*s);
+const vDot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0);
+const outer=(a,b)=>a.map(ai=>b.map(bj=>ai*bj));
+const matAdd=(A,B)=>A.map((r,i)=>r.map((v,j)=>v+B[i][j]));
+const matScale=(A,s)=>A.map(r=>r.map(v=>v*s));
+const matVec=(A,v)=>A.map(row=>vDot(row,v));
+
+function randn(){
+  let u=0,v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function jacobiEigen(Ain, maxIter){
+  const n = Ain.length;
+  let A = Ain.map(r=>r.slice());
+  let V = eye(n);
+  for(let iter=0; iter<maxIter; iter++){
+    let p=0,q=1,maxVal=0;
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+      if(Math.abs(A[i][j])>maxVal){ maxVal=Math.abs(A[i][j]); p=i; q=j; }
+    }
+    if(maxVal<1e-9) break;
+    const app=A[p][p], aqq=A[q][q], apq=A[p][q];
+    const phi = 0.5*Math.atan2(2*apq, aqq-app);
+    const c=Math.cos(phi), s=Math.sin(phi);
+    for(let k=0;k<n;k++){ const akp=A[k][p], akq=A[k][q]; A[k][p]=c*akp-s*akq; A[k][q]=s*akp+c*akq; }
+    for(let k=0;k<n;k++){ const apk=A[p][k], aqk=A[q][k]; A[p][k]=c*apk-s*aqk; A[q][k]=s*apk+c*aqk; }
+    for(let k=0;k<n;k++){ const vkp=V[k][p], vkq=V[k][q]; V[k][p]=c*vkp-s*vkq; V[k][q]=s*vkp+c*vkq; }
+  }
+  const values=[]; for(let i=0;i<n;i++) values.push(A[i][i]);
+  return {values, vectors:V};
+}
+
+function softmax(x){
+  const m = Math.max(...x);
+  const exps = x.map(xi=>Math.exp(xi-m));
+  const s = exps.reduce((a,b)=>a+b,0);
+  return exps.map(e=>e/s);
+}
+
+function cmaes(objective, N, opts={}){
+  let sigma = opts.sigma0 || 0.6;
+  let xmean = opts.x0 ? opts.x0.slice() : zeros(N);
+  const lambda = opts.lambda || (4 + Math.floor(3*Math.log(N)));
+  const mu = Math.floor(lambda/2);
+  let weights = []; for(let i=1;i<=mu;i++) weights.push(Math.log(mu+0.5)-Math.log(i));
+  const wsum = weights.reduce((a,b)=>a+b,0); weights = weights.map(w=>w/wsum);
+  const mueff = 1/weights.reduce((a,w)=>a+w*w,0);
+  const cc = (4+mueff/N)/(N+4+2*mueff/N);
+  const cs = (mueff+2)/(N+mueff+5);
+  const c1 = 2/(((N+1.3)**2)+mueff);
+  const cmu = Math.min(1-c1, 2*(mueff-2+1/mueff)/(((N+2)**2)+mueff));
+  const damps = 1+2*Math.max(0, Math.sqrt((mueff-1)/(N+1))-1)+cs;
+  let pc = zeros(N), ps = zeros(N);
+  let B = eye(N), D = new Array(N).fill(1), C = eye(N);
+  const chiN = Math.sqrt(N)*(1-1/(4*N)+1/(21*N*N));
+  const maxGen = opts.maxGen || 90;
+  let best = {fitness:Infinity, x:xmean.slice()};
+
+  for(let gen=0; gen<maxGen; gen++){
+    const arz=[], arx=[], fit=[];
+    for(let k=0;k<lambda;k++){
+      const z = zeros(N).map(()=>randn());
+      const Dz = z.map((zi,i)=>zi*D[i]);
+      const y = matVec(B, Dz);
+      const x = vAdd(xmean, vScale(y, sigma));
+      arz.push(z); arx.push(x); fit.push(objective(x));
+    }
+    const idx = arx.map((_,i)=>i).sort((a,b)=>fit[a]-fit[b]);
+    if(fit[idx[0]] < best.fitness){ best.fitness=fit[idx[0]]; best.x=arx[idx[0]].slice(); }
+
+    const xold = xmean.slice();
+    let xmeanNew = zeros(N), zmean = zeros(N);
+    for(let i=0;i<mu;i++){
+      xmeanNew = vAdd(xmeanNew, vScale(arx[idx[i]], weights[i]));
+      zmean = vAdd(zmean, vScale(arz[idx[i]], weights[i]));
+    }
+    xmean = xmeanNew;
+    const Bzmean = matVec(B, zmean);
+    ps = vAdd(vScale(ps,1-cs), vScale(Bzmean, Math.sqrt(cs*(2-cs)*mueff)));
+    const psNorm = Math.sqrt(vDot(ps,ps));
+    const hsig = (psNorm/Math.sqrt(1-Math.pow(1-cs,2*(gen+1)))/chiN) < (1.4+2/(N+1)) ? 1:0;
+    const ymean = vScale(vSub(xmean,xold), 1/sigma);
+    pc = vAdd(vScale(pc,1-cc), vScale(ymean, hsig*Math.sqrt(cc*(2-cc)*mueff)));
+
+    let Cmu = zeros(N).map(()=>zeros(N));
+    for(let i=0;i<mu;i++){
+      const yi = vScale(vSub(arx[idx[i]],xold), 1/sigma);
+      Cmu = matAdd(Cmu, matScale(outer(yi,yi), weights[i]));
+    }
+    const pcOuter = outer(pc,pc);
+    const deltahsig = (1-hsig)*cc*(2-cc);
+    const newC = zeros(N).map(()=>zeros(N));
+    for(let i=0;i<N;i++) for(let j=0;j<N;j++){
+      newC[i][j] = (1-c1-cmu)*C[i][j] + c1*(pcOuter[i][j] + deltahsig*C[i][j]) + cmu*Cmu[i][j];
+    }
+    C = newC;
+    sigma = sigma * Math.exp((cs/damps)*(psNorm/chiN - 1));
+
+    if(gen % 4 === 0 || gen===maxGen-1){
+      const Csym = C.map((row,i)=>row.map((v,j)=>(v+C[j][i])/2));
+      const {values, vectors} = jacobiEigen(Csym, 50);
+      D = values.map(v=>Math.sqrt(Math.max(v,1e-10)));
+      B = vectors;
+    }
+  }
+  return best;
+}
+
+function makeObjective(mode, mu, Sigma, param){
+  return function(x){
+    const w = softmax(x);
+    const ret = vDot(w, mu);
+    const Sw = matVec(Sigma, w);
+    const variance = Math.max(vDot(w, Sw), 1e-9);
+    const vol = Math.sqrt(variance);
+    const penalty = 60;
+    if(mode==='sharpe'){
+      return -(ret / vol);
+    } else if(mode==='maxReturnAtVol'){
+      const excess = Math.max(0, vol - param.targetVol);
+      return -ret + penalty*excess*excess;
+    } else { // minVolAtReturn
+      const deficit = Math.max(0, param.targetReturn - ret);
+      return vol + penalty*deficit*deficit;
+    }
+  };
+}
+
+/* =====================================================================
+   8bis. DONNÉES LIVE — via le backend Python local (yfinance)
+   Le calcul de rendement/volatilité réels se fait maintenant côté
+   serveur (voir backend/app.py), donc plus de proxy CORS ni de blocage
+   navigateur : un seul appel HTTP vers votre backend, qui répond avec
+   toutes les métriques déjà calculées.
+   ===================================================================== */
+async function refreshFromYahoo(){
+  const btn = document.getElementById('yahooBtn');
+  const status = document.getElementById('yahooStatus');
+  const raw = document.getElementById('backendUrl').value.trim().replace(/\/+$/,'');
+  const base = raw; // vide = même origine que la page (cas d'un backend qui sert aussi l'interface)
+  btn.disabled = true;
+  const t0 = Date.now();
+  status.textContent = base ? `Connexion au backend (${base})…` : 'Connexion au backend…';
+
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 65000); // garde-fou : 65s (le service gratuit peut se "réveiller" en 30-60s)
+
+  try{
+    const res = await fetch(base + '/api/metrics/batch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ isins: ASSETS.map(a=>a.isin) }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('Le backend a répondu avec une erreur HTTP '+res.status);
+    const data = await res.json();
+    const results = data.results || [];
+
+    let ok=0, fail=0;
+    const failedNames = [];
+    results.forEach(r=>{
+      const a = ASSETS.find(x=>x.isin===r.isin);
+      if(!a) return;
+      if(r.error || r.ret==null || r.vol==null){
+        a.liveData = false;
+        a.lastError = r.error || 'réponse incomplète du backend';
+        fail++; failedNames.push(a.name);
+      }else{
+        a.ret = r.ret; a.vol = Math.max(r.vol, 0.05);
+        a.sharpe = a.ret/Math.max(a.vol,0.05);
+        a.liveData = true; a.liveAt = new Date();
+        a.yahooSymbol = r.symbol; a.lastError = null;
+        ok++;
+      }
+    });
+
+    renderTable(); renderHero();
+    const elapsed = ((Date.now()-t0)/1000).toFixed(0);
+    status.textContent = `Terminé en ${elapsed}s — ${ok} ETF actualisés en direct, ${fail} conservé(s) en estimation` + (failedNames.length ? ` (${failedNames.slice(0,3).join(', ')}${failedNames.length>3?'…':''})` : '') + '.';
+  }catch(err){
+    clearTimeout(timer);
+    const reason = err.name==='AbortError' ? 'délai dépassé (65s)' : err.message;
+    status.textContent = `Impossible de contacter le backend${base?' sur '+base:''} (${reason}). Si le service vient de "se réveiller" après une inactivité, réessayez dans une minute. Les valeurs estimées restent utilisées.`;
+  }
+  btn.disabled = false;
+}
+
+/* =====================================================================
+   9. LANCEMENT OPTIMISATION + RENDU RESULTATS
+   ===================================================================== */
+function resetResults(){
+  document.getElementById('resultsPanel').style.display='none';
+  document.getElementById('frontierPanel').style.display='none';
+  document.getElementById('optNote').textContent='';
+}
+
+function runOptimization(){
+  const list = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
+  const note = document.getElementById('optNote');
+  if(list.length < 2){
+    note.textContent = "Sélectionnez au moins 2 ETF dans le tableau pour lancer l'optimisation.";
+    note.style.color = 'var(--rose)';
+    return;
+  }
+  note.style.color = 'var(--text-faint)';
+  note.textContent = 'Optimisation en cours…';
+  document.getElementById('runBtn').disabled = true;
+
+  setTimeout(()=>{
+    const {mu, Sigma} = buildMuSigma(list);
+    const param = { targetVol: state.targetVol/100, targetReturn: state.targetReturn/100 };
+    const objective = makeObjective(state.objective, mu, Sigma, param);
+    const best = cmaes(objective, list.length, {maxGen:100});
+    const w = softmax(best.x);
+
+    const ret = vDot(w, mu);
+    const vol = Math.sqrt(Math.max(vDot(w, matVec(Sigma,w)), 1e-9));
+    const sharpe = ret/vol;
+
+    displayResults(list, w, ret, vol, sharpe);
+    displayFrontier(list, mu, Sigma, {vol, ret});
+
+    note.style.color = 'var(--text-dim)';
+    note.textContent = `Convergence CMA-ES obtenue sur ${list.length} actifs (100 générations).`;
+    document.getElementById('runBtn').disabled = false;
+  }, 30);
+}
+
+let allocChart, frontierChart;
+function displayResults(list, w, ret, vol, sharpe){
+  document.getElementById('resultsPanel').style.display='block';
+  document.getElementById('resRet').textContent = (ret*100).toFixed(2)+'%';
+  document.getElementById('resVol').textContent = (vol*100).toFixed(2)+'%';
+  document.getElementById('resSharpe').textContent = sharpe.toFixed(2);
+
+  const amount = parseFloat(document.getElementById('investAmount').value) || 0;
+  const order = list.map((a,i)=>({a, w:w[i]})).sort((x,y)=>y.w-x.w);
+
+  const listEl = document.getElementById('allocList');
+  listEl.innerHTML = '';
+  order.forEach(({a,w}, i)=>{
+    const color = CAT_COLORS[a.category] || '#8993a4';
+    const row = document.createElement('div');
+    row.className='alloc-row';
+    row.innerHTML = `<span class="alloc-swatch" style="background:${color}"></span><span class="alloc-name">${a.name}</span><span class="alloc-w">${(w*100).toFixed(1)}%</span><span class="alloc-amt">${Math.round(w*amount).toLocaleString('fr-FR')}€</span>`;
+    listEl.appendChild(row);
+  });
+
+  const ctx = document.getElementById('allocDonut');
+  if(allocChart) allocChart.destroy();
+  allocChart = new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels: order.map(o=>o.a.name),
+      datasets:[{ data: order.map(o=>o.w*100), backgroundColor: order.map(o=>CAT_COLORS[o.a.category]||'#8993a4'), borderColor:'#0d1218', borderWidth:3 }]
+    },
+    options:{ plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>`${c.label}: ${c.raw.toFixed(1)}%`}}}, cutout:'62%' }
+  });
+}
+
+function displayFrontier(list, mu, Sigma, optimal){
+  document.getElementById('frontierPanel').style.display='block';
+  const cloud = [];
+  for(let i=0;i<500;i++){
+    const x = list.map(()=>randn()*1.4);
+    const w = softmax(x);
+    const r = vDot(w, mu);
+    const v = Math.sqrt(Math.max(vDot(w, matVec(Sigma,w)), 1e-9));
+    cloud.push({x:v*100, y:r*100});
+  }
+  const assetPoints = list.map(a=>({x:a.vol, y:a.ret, label:a.name}));
+  const ctx = document.getElementById('frontierScatter');
+  if(frontierChart) frontierChart.destroy();
+  frontierChart = new Chart(ctx, {
+    type:'scatter',
+    data:{
+      datasets:[
+        { label:'Portefeuilles simulés', data:cloud, backgroundColor:'rgba(124,143,255,0.18)', pointRadius:3, pointHoverRadius:3 },
+        { label:'ETF individuels', data:assetPoints, backgroundColor:'#f2b85c', pointRadius:6, pointHoverRadius:8 },
+        { label:'Portefeuille optimal', data:[{x:optimal.vol*100, y:optimal.ret*100, label:'Optimum CMA-ES'}], backgroundColor:'#2fd7b3', pointRadius:9, pointHoverRadius:11, borderColor:'#fff', borderWidth:2 },
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{
+        legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
+        tooltip:{callbacks:{label:(c)=> c.raw.label ? `${c.raw.label}: ${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}%` : `${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}%`}}
+      },
+      scales:{
+        x:{title:{display:true,text:'Volatilité annualisée (%)',color:'#5c6675'},grid:{color:'#1a212a'},ticks:{color:'#5c6675'}},
+        y:{title:{display:true,text:'Rendement annualisé (%)',color:'#5c6675'},grid:{color:'#1a212a'},ticks:{color:'#5c6675'}}
+      }
+    }
+  });
+}
+
+/* =====================================================================
+   9bis. REPLI DES FILTRES (mobile)
+   ===================================================================== */
+function toggleFilters(){
+  document.getElementById('filterBody').classList.toggle('open');
+  document.getElementById('filterToggleBtn').classList.toggle('open');
+}
+function initFilterCollapse(){
+  const isMobile = window.innerWidth < 980;
+  const body = document.getElementById('filterBody');
+  const btn = document.getElementById('filterToggleBtn');
+  if(isMobile){ body.classList.remove('open'); btn.classList.remove('open'); }
+  else { body.classList.add('open'); btn.classList.add('open'); }
+}
+
+/* =====================================================================
+   10. INIT
+   ===================================================================== */
+initFilters();
+renderHero();
+renderTable();
+renderObjectives();
+initFilterCollapse();
+</script>
+</body>
+</html>
