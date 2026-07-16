@@ -6,7 +6,38 @@
 <title>ETF PEA Optimizer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+/* Chargeur de Chart.js avec plusieurs CDN de secours : si le premier
+   domaine est bloqué (bloqueur de contenu, filtrage réseau...), on essaie
+   le suivant, plutôt que de casser toute la page comme avec un unique
+   <script src="..."> figé. */
+window.chartReadyPromise = (function(){
+  const sources = [
+    'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
+    'https://unpkg.com/chart.js@4.4.4/dist/chart.umd.min.js',
+  ];
+  function loadScript(src, timeoutMs){
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      const timer = setTimeout(()=>{ s.remove(); reject(new Error('timeout: '+src)); }, timeoutMs);
+      s.src = src;
+      s.onload = ()=>{ clearTimeout(timer); resolve(); };
+      s.onerror = ()=>{ clearTimeout(timer); reject(new Error('erreur de chargement: '+src)); };
+      document.head.appendChild(s);
+    });
+  }
+  return (async () => {
+    for(const src of sources){
+      try{
+        await loadScript(src, 8000);
+        if(typeof window.Chart !== 'undefined') return true;
+      }catch(e){ /* on tente la source suivante */ }
+    }
+    return false; // aucune source n'a fonctionné : l'app doit se dégrader proprement
+  })();
+})();
+</script>
 <style>
 :root{
   --bg:#0a0e13;
@@ -302,12 +333,26 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
                 <th data-sort="sharpe">Rend./Vol.</th>
                 <th data-sort="fundSize">Encours</th>
                 <th>Source</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="tableBody"></tbody>
           </table>
         </div>
         <div class="tray" id="selectionTray"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Ajouter un ETF (recherche Yahoo Finance)</div>
+        <div class="note" style="margin-bottom:12px;">
+          Cette recherche interroge Yahoo Finance : elle peut retrouver un fonds par son nom ou son ISIN et calculer sa performance réelle, mais elle ne sait <b>ni</b> s'il est éligible au PEA, <b>ni</b> s'il est capitalisant ou distribuant, <b>ni</b> s'il est listé sur Trade Republic — ces trois points sont à vérifier vous-même (fiche DIC de l'émetteur, app du courtier) avant de valider l'ajout.
+        </div>
+        <div class="range-row" style="gap:8px;margin-bottom:10px;">
+          <input class="search-input" id="etfSearchInput" placeholder="Nom du fonds ou ISIN (ex. Lyxor PEA, IE00…)" style="flex:1;">
+          <button class="run-btn" style="width:auto;padding:9px 16px;margin:0;font-size:12.5px;" onclick="searchNewFund()">Rechercher</button>
+        </div>
+        <div id="searchResults"></div>
+        <div id="addFundForm" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft);"></div>
       </div>
 
       <div class="panel">
@@ -396,13 +441,39 @@ const ASSETS = [
   {id:'val1', name:'Amundi MSCI EMU Value Factor', isin:'LU1598690169', category:'Smart Beta', index:'MSCI EMU Value Factor', ter:0.40, fundSize:250, ret:6.8, vol:16.5, region:{eu:1}},
   {id:'mon1', name:'Amundi PEA Euro Court Terme', isin:'FR0013346681', category:'Monétaire', index:'€STR / Euro court terme', ter:0.25, fundSize:300, ret:2.7, vol:0.4, region:{}, cash:true},
 ];
-ASSETS.forEach(a=>{ a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05); a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; });
+ASSETS.forEach(a=>{ a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05); a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; a.custom=false; });
 
-const CATS = [...new Set(ASSETS.map(a=>a.category))];
-const CAT_COLORS = {
+/* Fonds ajoutés manuellement par l'utilisateur (recherche Yahoo Finance),
+   persistés en local sur cet appareil/navigateur pour survivre aux
+   rechargements de page. */
+const FALLBACK_PALETTE = ['#e07be0','#7be0c2','#e0c27b','#7ba7e0','#e0947b','#a7e07b','#c27be0'];
+let CATS = [];
+let CAT_COLORS = {
   'Monde':'#2fd7b3','USA':'#7c8fff','Europe':'#f2b85c','France':'#f2617a','Allemagne':'#c792ea',
   'Italie':'#5cc9f2','Émergents':'#f28c5c','Smart Beta':'#9ad65c','Monétaire':'#8993a4'
 };
+function refreshCategoriesUI(){
+  CATS = [...new Set(ASSETS.map(a=>a.category))];
+  let paletteIdx = 0;
+  CATS.forEach(cat=>{
+    if(!CAT_COLORS[cat]){ CAT_COLORS[cat] = FALLBACK_PALETTE[paletteIdx % FALLBACK_PALETTE.length]; paletteIdx++; }
+  });
+}
+function loadCustomETFs(){
+  let saved = [];
+  try{ saved = JSON.parse(localStorage.getItem('customETFs') || '[]'); }catch(e){ saved = []; }
+  saved.forEach(a=>{
+    a.liveData = !!a.liveData; a.lastError=null; a.custom = true;
+    a.sharpe = a.ret/Math.max(a.vol,0.05);
+    ASSETS.push(a);
+  });
+}
+function saveCustomETFs(){
+  const custom = ASSETS.filter(a=>a.custom);
+  localStorage.setItem('customETFs', JSON.stringify(custom));
+}
+loadCustomETFs();
+refreshCategoriesUI();
 
 /* =====================================================================
    2. ETAT
@@ -519,6 +590,7 @@ function renderTable(){
       <td class="num">${a.sharpe.toFixed(2)}</td>
       <td class="num">${a.fundSize.toLocaleString('fr-FR')}M€</td>
       <td>${a.liveData ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Calculé à partir des cours réels Yahoo Finance (${a.yahooSymbol||''}), ${a.liveAt?a.liveAt.toLocaleString('fr-FR'):''}">● Live</span>` : `<span class="cat-badge" title="Estimation indicative${a.lastError?(' — échec de la dernière actualisation : '+a.lastError):''}">○ Estimé</span>`}</td>
+      <td class="checkbox-cell">${a.custom ? `<button class="tray-chip button" style="border:none;background:none;color:var(--text-faint);cursor:pointer;font-size:15px;" title="Retirer cet ETF ajouté manuellement" onclick="removeCustomETF('${a.id}')">×</button>` : ''}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -606,6 +678,12 @@ function renderCompare(){
   const list = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
   if(list.length===0){
     wrap.innerHTML = '<div class="placeholder">Sélectionnez au moins un ETF dans le tableau ci-dessus (case à cocher) pour afficher la comparaison.</div>';
+    return;
+  }
+  if(typeof Chart === 'undefined'){
+    const metricLabel = {ter:'TER (%)', ret:'Rendement (%)', vol:'Volatilité (%)'}[state.metric];
+    wrap.innerHTML = '<div class="note" style="margin-bottom:8px;">Graphique indisponible (bibliothèque bloquée) — valeurs en texte :</div>' +
+      list.map(a=>`<div class="alloc-row"><span class="alloc-name">${a.name}</span><span class="alloc-w">${a[state.metric].toFixed(2)} — ${metricLabel}</span></div>`).join('');
     return;
   }
   if(!wrap.querySelector('canvas')){
@@ -886,7 +964,7 @@ async function refreshFromYahoo(){
       }
     });
 
-    renderTable(); renderHero();
+    try{ renderTable(); renderHero(); }catch(renderErr){ console.warn('Erreur de rendu (graphiques) :', renderErr); }
     const elapsed = ((Date.now()-t0)/1000).toFixed(0);
     status.textContent = `Terminé en ${elapsed}s — ${ok} ETF actualisés en direct, ${fail} conservé(s) en estimation` + (failedNames.length ? ` (${failedNames.slice(0,3).join(', ')}${failedNames.length>3?'…':''})` : '') + '.';
   }catch(err){
@@ -895,6 +973,140 @@ async function refreshFromYahoo(){
     status.textContent = `Impossible de contacter le backend${base?' sur '+base:''} (${reason}). Si le service vient de "se réveiller" après une inactivité, réessayez dans une minute. Les valeurs estimées restent utilisées.`;
   }
   btn.disabled = false;
+}
+
+/* =====================================================================
+   8ter. RECHERCHE ET AJOUT D'UN NOUVEL ETF (via Yahoo Finance)
+   Rappel : Yahoo ne fournit ni l'éligibilité PEA, ni la politique de
+   distribution, ni la disponibilité sur un courtier — l'utilisateur doit
+   confirmer ces trois points lui-même dans le formulaire d'ajout.
+   ===================================================================== */
+function currentBackendBase(){
+  return document.getElementById('backendUrl').value.trim().replace(/\/+$/,'');
+}
+
+async function searchNewFund(){
+  const q = document.getElementById('etfSearchInput').value.trim();
+  const resultsEl = document.getElementById('searchResults');
+  document.getElementById('addFundForm').style.display = 'none';
+  document.getElementById('addFundForm').innerHTML = '';
+  if(!q){ resultsEl.innerHTML = '<div class="note">Tapez un nom de fonds ou un code ISIN.</div>'; return; }
+  resultsEl.innerHTML = '<div class="note">Recherche en cours…</div>';
+  try{
+    const base = currentBackendBase();
+    const res = await fetch(base + '/api/search?q=' + encodeURIComponent(q));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    const items = data.results || [];
+    if(items.length===0){ resultsEl.innerHTML = '<div class="note">Aucun résultat Yahoo Finance pour cette recherche.</div>'; return; }
+    resultsEl.innerHTML = '';
+    items.forEach(item=>{
+      const row = document.createElement('div');
+      row.className = 'obj-option';
+      row.style.cursor = 'pointer';
+      row.innerHTML = `<div class="t">${item.name || item.symbol}</div><div class="d">${item.symbol} · ${item.exchange || '—'} · ${item.type}</div>`;
+      row.onclick = ()=> selectFundCandidate(item);
+      resultsEl.appendChild(row);
+    });
+  }catch(err){
+    resultsEl.innerHTML = `<div class="note" style="color:var(--rose);">Recherche impossible (${err.message}). Vérifiez que le backend répond.</div>`;
+  }
+}
+
+async function selectFundCandidate(item){
+  const formEl = document.getElementById('addFundForm');
+  formEl.style.display = 'block';
+  formEl.innerHTML = '<div class="note">Récupération des données réelles pour '+item.symbol+'…</div>';
+  let metrics = null;
+  try{
+    const base = currentBackendBase();
+    const res = await fetch(base + '/api/metrics-by-symbol?symbol=' + encodeURIComponent(item.symbol));
+    metrics = await res.json();
+  }catch(err){
+    metrics = {error: err.message};
+  }
+
+  const okMetrics = metrics && !metrics.error && metrics.ret!=null && metrics.vol!=null;
+  const catOptions = CATS.map(c=>`<option value="${c}">${c}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
+
+  formEl.innerHTML = `
+    <div class="note" style="margin-bottom:10px;">
+      ${okMetrics
+        ? `Données réelles récupérées (${metrics.points} points d'historique) : rendement annualisé <b style="color:var(--teal);">${metrics.ret.toFixed(1)}%</b>, volatilité <b style="color:var(--amber);">${metrics.vol.toFixed(1)}%</b>.`
+        : `Impossible de calculer le rendement/volatilité réels pour ${item.symbol} (${metrics && metrics.error ? metrics.error : 'erreur inconnue'}). Vous pouvez tout de même l'ajouter en renseignant des valeurs manuellement, mais elles ne seront pas fiables.`}
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Nom affiché</label>
+      <input class="search-input" id="newFundName" value="${(item.name||item.symbol).replace(/"/g,'&quot;')}">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">ISIN (si connu — facultatif)</label>
+      <input class="search-input" id="newFundIsin" placeholder="ex. FR0000000000">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Catégorie / zone</label>
+      <select class="search-input" id="newFundCat" onchange="if(this.value==='__new__'){document.getElementById('newFundCatCustom').style.display='block';}else{document.getElementById('newFundCatCustom').style.display='none';}">${catOptions}</select>
+      <input class="search-input" id="newFundCatCustom" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:6px;">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Politique de distribution — à VOUS de vérifier (fiche DIC)</label>
+      <div class="chip-row">
+        <div class="chip active" data-dist="Capitalisant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Capitalisant</div>
+        <div class="chip" data-dist="Distribuant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Distribuant</div>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">TER annuel estimé (%) — vérifiez la fiche DIC</label>
+      <input class="search-input" id="newFundTer" type="number" step="0.01" min="0" value="0.25">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Encours (millions €, estimation si inconnu)</label>
+      <input class="search-input" id="newFundSize" type="number" step="10" min="0" value="100">
+    </div>
+    <div class="note" style="margin-bottom:10px;">Éligibilité PEA et disponibilité sur Trade Republic : non vérifiées automatiquement — confirmez-les vous-même avant d'investir.</div>
+    <button class="run-btn" onclick='confirmAddFund(${JSON.stringify({symbol:item.symbol, ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15, live: okMetrics}).replace(/'/g,"&#39;")})'>Ajouter à mon univers d'ETF</button>
+  `;
+}
+
+function confirmAddFund(payload){
+  const name = document.getElementById('newFundName').value.trim() || payload.symbol;
+  const isin = document.getElementById('newFundIsin').value.trim() || ('CUSTOM-'+payload.symbol);
+  let category = document.getElementById('newFundCat').value;
+  if(category === '__new__'){
+    category = document.getElementById('newFundCatCustom').value.trim() || 'Autre';
+  }
+  const dist = document.querySelector('[data-dist].active') ? document.querySelector('[data-dist].active').getAttribute('data-dist') : 'Capitalisant';
+  const ter = parseFloat(document.getElementById('newFundTer').value) || 0.25;
+  const fundSize = parseFloat(document.getElementById('newFundSize').value) || 100;
+
+  const newAsset = {
+    id: 'custom-' + payload.symbol.replace(/[^a-zA-Z0-9]/g,'') + '-' + Date.now(),
+    name, isin, category, index: name, ter, fundSize,
+    ret: payload.ret, vol: Math.max(payload.vol, 0.05),
+    region: {}, currency:'EUR', dist, custom:true,
+    liveData: !!payload.live, yahooSymbol: payload.symbol, liveAt: payload.live ? new Date() : null, lastError:null,
+  };
+  newAsset.sharpe = newAsset.ret/Math.max(newAsset.vol,0.05);
+  ASSETS.push(newAsset);
+  saveCustomETFs();
+  refreshCategoriesUI();
+  state.cats.add(category);
+  initFilters();
+  renderTable();
+  document.getElementById('addFundForm').style.display='none';
+  document.getElementById('searchResults').innerHTML = `<div class="note" style="color:var(--teal);">« ${name} » ajouté à votre univers d'ETF (visible dans le tableau ci-dessus).</div>`;
+  document.getElementById('etfSearchInput').value='';
+}
+
+function removeCustomETF(id){
+  const idx = ASSETS.findIndex(a=>a.id===id);
+  if(idx===-1) return;
+  ASSETS.splice(idx,1);
+  state.selected.delete(id);
+  saveCustomETFs();
+  refreshCategoriesUI();
+  initFilters();
+  renderTable();
 }
 
 /* =====================================================================
@@ -959,6 +1171,10 @@ function displayResults(list, w, ret, vol, sharpe){
   });
 
   const ctx = document.getElementById('allocDonut');
+  if(typeof Chart === 'undefined'){
+    ctx.style.display = 'none';
+    return; // la liste texte ci-dessus (listEl) reste affichée : dégradation propre
+  }
   if(allocChart) allocChart.destroy();
   allocChart = new Chart(ctx, {
     type:'doughnut',
@@ -982,6 +1198,10 @@ function displayFrontier(list, mu, Sigma, optimal){
   }
   const assetPoints = list.map(a=>({x:a.vol, y:a.ret, label:a.name}));
   const ctx = document.getElementById('frontierScatter');
+  if(typeof Chart === 'undefined'){
+    document.getElementById('frontierPanel').innerHTML = '<div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente</div><div class="placeholder">Graphique indisponible (bibliothèque bloquée) — le portefeuille optimal reste affiché ci-dessus.</div>';
+    return;
+  }
   if(frontierChart) frontierChart.destroy();
   frontierChart = new Chart(ctx, {
     type:'scatter',
@@ -1025,10 +1245,22 @@ function initFilterCollapse(){
    10. INIT
    ===================================================================== */
 initFilters();
-renderHero();
-renderTable();
+renderTable();       // le tableau et les filtres ne dépendent pas de Chart.js : on les affiche tout de suite
 renderObjectives();
 initFilterCollapse();
+
+(async () => {
+  const chartsOk = await window.chartReadyPromise; // attend le chargement de Chart.js (avec repli multi-CDN)
+  try{
+    renderHero();
+  }catch(err){
+    console.warn('Graphiques indisponibles (Chart.js non chargé) :', err);
+    const heroEl = document.getElementById('heroScatter');
+    if(heroEl && heroEl.parentElement){
+      heroEl.parentElement.innerHTML = '<div class="placeholder">Graphique indisponible pour le moment (bibliothèque de graphiques bloquée par le réseau ou un bloqueur de contenu). Le reste de l\'application fonctionne normalement.</div>';
+    }
+  }
+})();
 </script>
 </body>
 </html>

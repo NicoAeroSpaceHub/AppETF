@@ -21,10 +21,21 @@ Déploiement (ex. Render, pour un usage 100% depuis iPhone) : voir
 README.md — tout se fait par navigateur, sans terminal.
 
 Endpoints :
-    GET  /                       -> sert la page d'interface (index.html)
-    GET  /api/metrics?isin=...   -> métriques pour un seul ISIN
-    POST /api/metrics/batch      -> métriques pour une liste d'ISIN
-                                     body: {"isins": ["FR001400U5Q4", ...]}
+    GET  /                          -> sert la page d'interface (index.html)
+    GET  /api/metrics?isin=...      -> métriques pour un seul ISIN
+    POST /api/metrics/batch         -> métriques pour une liste d'ISIN
+                                        body: {"isins": ["FR001400U5Q4", ...]}
+    GET  /api/search?q=...          -> recherche de fonds par nom/ISIN (Yahoo)
+    GET  /api/metrics-by-symbol     -> métriques pour un ticker Yahoo direct
+
+IMPORTANT — ce que Yahoo Finance / yfinance NE fournissent PAS : l'éligibilité
+PEA, la politique de distribution (capitalisant/distribuant) et la
+disponibilité sur un courtier donné (Trade Republic ou autre) ne sont pas
+des données financières générales — ce sont des informations réglementaires
+françaises et des choix commerciaux de courtier, absentes de toute API
+financière généraliste. La recherche ci-dessous renvoie donc des candidats
+avec de vraies données de performance, mais l'utilisateur doit confirmer
+lui-même ces trois points avant d'ajouter un fonds à son univers.
 """
 from __future__ import annotations
 
@@ -185,3 +196,64 @@ def metrics_batch(payload: ISINList):
             except Exception as exc:
                 results.append({"isin": futures[future], "error": str(exc)})
     return {"results": results}
+
+
+@app.get("/api/search")
+def search_funds(q: str):
+    """Recherche de fonds par nom ou ISIN via l'API de recherche de Yahoo
+    Finance. Ne renvoie QUE ce que Yahoo sait : ticker, nom, place de
+    cotation, devise. Ne dit RIEN sur l'éligibilité PEA, la politique de
+    distribution, ni la disponibilité sur un courtier — à vérifier
+    vous-même (fiche DIC de l'émetteur, app du courtier, justETF...)."""
+    try:
+        r = requests.get(
+            "https://query2.finance.yahoo.com/v1/finance/search",
+            params={"q": q, "quotesCount": 10, "newsCount": 0},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=6,
+        )
+        r.raise_for_status()
+        quotes = r.json().get("quotes", [])
+    except Exception as exc:
+        return {"results": [], "error": str(exc)}
+
+    results = []
+    for item in quotes:
+        qtype = item.get("quoteType")
+        if qtype not in ("ETF", "EQUITY", "MUTUALFUND"):
+            continue
+        results.append({
+            "symbol": item.get("symbol"),
+            "name": item.get("longname") or item.get("shortname") or item.get("symbol"),
+            "exchange": item.get("exchange"),
+            "type": qtype,
+        })
+    return {"results": results}
+
+
+@app.get("/api/metrics-by-symbol")
+def metrics_by_symbol(symbol: str):
+    """Comme /api/metrics mais à partir d'un ticker Yahoo Finance déjà
+    connu (issu de /api/search), sans passer par la résolution ISIN."""
+    now = time.time()
+    cache_key = f"symbol:{symbol}"
+    cached = _cache.get(cache_key)
+    if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
+        return cached[1]
+    try:
+        info = {}
+        try:
+            info = yf.Ticker(symbol).fast_info
+        except Exception:
+            pass
+        metrics = compute_metrics(symbol)
+        currency = None
+        try:
+            currency = info.get("currency") if hasattr(info, "get") else getattr(info, "currency", None)
+        except Exception:
+            currency = None
+        result = {"symbol": symbol, "currency": currency, "error": None, **metrics}
+    except Exception as exc:
+        result = {"symbol": symbol, "error": str(exc)}
+    _cache[cache_key] = (now, result)
+    return result
