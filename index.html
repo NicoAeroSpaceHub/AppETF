@@ -97,6 +97,21 @@ a{color:inherit;}
 .hero-chart-title{font-size:12px;color:var(--text-faint);display:flex;justify-content:space-between;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.6px;}
 .hero-chart canvas{max-height:260px;}
 
+/* ---------- Conteneurs de graphiques (taille explicite, indépendante du
+   ratio largeur/hauteur — corrige les graphiques trop plats en portrait
+   ou trop grands en paysage sur mobile) ---------- */
+.chart-box{position:relative;width:100%;height:300px;}
+.chart-box.tall{height:340px;}
+.chart-box.small{height:230px;}
+.donut-box{position:relative;height:210px;max-width:230px;margin:0 auto;}
+@media (max-width:640px){
+  .chart-box{height:270px;}
+  .chart-box.tall{height:300px;}
+  .chart-box.small{height:220px;}
+  .donut-box{height:190px;max-width:190px;}
+}
+
+
 /* ---------- Layout ---------- */
 .layout{display:grid;grid-template-columns:270px 1fr;gap:24px;align-items:start;}
 @media (max-width:980px){.layout{grid-template-columns:1fr;}}
@@ -241,7 +256,13 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
   .tab-btn{padding:8px 13px;font-size:12.5px;}
   .invest-input input#backendUrl{width:150px;}
   .name-cell b{font-size:12.5px;}
+  .panel{padding:13px;border-radius:11px;}
+  .panel+.panel{margin-top:13px;}
+  .panel-title{font-size:11.5px;}
 }
+
+.h-scroll-slider{width:100%;margin-top:6px;display:none;}
+.h-scroll-slider.visible{display:block;}
 </style>
 </head>
 <body>
@@ -270,9 +291,11 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
     </div>
     <div class="hero-chart">
       <div class="hero-chart-title"><span>Risque / Rendement — univers complet</span><span id="heroCount">14 ETF</span></div>
-      <canvas id="heroScatter"></canvas>
+      <div class="chart-box"><canvas id="heroScatter"></canvas></div>
     </div>
   </div>
+
+  <!-- (le canvas ci-dessus reste dans .hero-chart qui gère déjà sa hauteur) -->
 
   <div class="tabbar" id="tabbar">
     <button class="tab-btn active" data-page="explorer" onclick="switchPage('explorer')">🔍 Explorer</button>
@@ -358,12 +381,13 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
           <div class="count" id="yahooStatus" style="flex-basis:100%;">Données estimées par défaut · non actualisées. Si cette page est servie par son propre backend (ex. déployée sur Render), laissez le champ vide. Sinon, renseignez l'URL de votre backend (ex. http://localhost:8000 ou https://votre-backend.onrender.com). Le premier appel après une période d'inactivité peut prendre jusqu'à une minute (le service gratuit "se réveille").</div>
         </div>
         <div class="note" style="margin-bottom:8px;">Astuce : cliquez sur le nom d'un fonds pour voir son cours dans le temps (onglet Graphique).</div>
-        <div class="table-scroll">
+        <div class="table-scroll" id="tableScrollWrap">
           <table>
             <thead id="tableHead"></thead>
             <tbody id="tableBody"></tbody>
           </table>
         </div>
+        <input type="range" id="tableHScroll" class="h-scroll-slider" min="0" max="0" value="0" step="1" oninput="document.getElementById('tableScrollWrap').scrollLeft = this.value;" title="Faire défiler le tableau horizontalement">
         <div class="tray" id="selectionTray"></div>
       </div>
 
@@ -392,12 +416,14 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       <div class="range-row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <select class="search-input" id="chartAddSelect" style="flex:1;min-width:200px;"></select>
         <button class="run-btn" style="width:auto;padding:9px 16px;margin:0;font-size:12.5px;" onclick="addSelectedToChart()">+ Ajouter au graphique</button>
-        <select class="search-input" id="chartRange" style="width:auto;" onchange="renderChartPage()">
+      </div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <select class="search-input" id="chartRange" style="width:auto;" onchange="onChartRangeChange()">
           <option value="1y">1 an</option>
           <option value="3y" selected>3 ans</option>
           <option value="5y">5 ans</option>
           <option value="10y">10 ans</option>
-          <option value="max">Maximum</option>
+          <option value="max">Maximum (chaque fonds depuis son origine)</option>
         </select>
         <select class="search-input" id="chartInterval" style="width:auto;" onchange="renderChartPage()">
           <option value="1d">Quotidien</option>
@@ -407,6 +433,14 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
         <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);">
           <input type="checkbox" class="chk" id="chartNormalize" checked onchange="renderChartPage()"> Base 100 (comparer les évolutions)
         </label>
+      </div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <label style="font-size:12.5px;color:var(--text-dim);">Du</label>
+        <input type="date" class="search-input" id="chartStartDate" style="width:auto;" onchange="onChartDatesChange()">
+        <label style="font-size:12.5px;color:var(--text-dim);">au</label>
+        <input type="date" class="search-input" id="chartEndDate" style="width:auto;" onchange="onChartDatesChange()">
+        <button class="reset-link" onclick="clearChartDates()">réinitialiser les dates</button>
+        <span class="note" id="chartDateNote" style="flex-basis:100%;margin-top:2px;">Par défaut, la période est fixée par la case ci-dessus (« 3 ans », etc.). Renseignez une date de début et/ou de fin pour la remplacer — la date de fin par défaut est aujourd'hui si laissée vide. Toutes les courbes sont alignées sur la même période, sauf en « Maximum » où chaque fonds démarre à sa date de cotation d'origine.</span>
       </div>
       <div class="tray" id="chartTray"></div>
       <div id="chartWrap" style="margin-top:14px;">
@@ -465,14 +499,14 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
         </div>
       </div>
       <div class="alloc-wrap">
-        <canvas id="allocDonut"></canvas>
+        <div class="donut-box"><canvas id="allocDonut"></canvas></div>
         <div class="alloc-list" id="allocList"></div>
       </div>
     </div>
 
     <div class="panel" id="frontierPanel" style="display:none;">
       <div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente (indicatif)</div>
-      <canvas id="frontierScatter" height="110"></canvas>
+      <div class="chart-box tall"><canvas id="frontierScatter"></canvas></div>
     </div>
 
   </div>
@@ -729,7 +763,27 @@ function renderTable(){
 
   renderTray();
   renderCompare();
+  syncTableHScroll();
 }
+
+/* Slider horizontal pour naviguer dans le tableau (utile sur mobile où le
+   défilement tactile natif n'est pas toujours évident à découvrir). */
+function syncTableHScroll(){
+  const wrap = document.getElementById('tableScrollWrap');
+  const slider = document.getElementById('tableHScroll');
+  if(!wrap || !slider) return;
+  const maxScroll = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+  slider.max = maxScroll;
+  slider.classList.toggle('visible', maxScroll > 4);
+  if(parseFloat(slider.value) > maxScroll) slider.value = maxScroll;
+}
+(function initTableHScrollSync(){
+  const wrap = document.getElementById('tableScrollWrap');
+  const slider = document.getElementById('tableHScroll');
+  if(!wrap || !slider) return;
+  wrap.addEventListener('scroll', ()=>{ slider.value = wrap.scrollLeft; });
+  window.addEventListener('resize', ()=>{ syncTableHScroll(); });
+})();
 
 /* =====================================================================
    4bis. SÉLECTEUR DE COLONNES
@@ -803,6 +857,7 @@ function renderHero(){
     data:{datasets},
     options:{
       responsive:true,
+      maintainAspectRatio:false,
       plugins:{
         legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
         tooltip:{callbacks:{label:(c)=>`${c.raw.label}: ${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}% vol`}}
@@ -842,7 +897,7 @@ function renderCompare(){
     return;
   }
   if(!wrap.querySelector('canvas')){
-    wrap.innerHTML = '<canvas id="compareCanvas" height="90"></canvas>';
+    wrap.innerHTML = '<div class="chart-box small"><canvas id="compareCanvas"></canvas></div>';
   }
   const ctx = document.getElementById('compareCanvas');
   const metricConf = {
@@ -860,6 +915,7 @@ function renderCompare(){
     data,
     options:{
       responsive:true,
+      maintainAspectRatio:false,
       indexAxis: list.length>5 ? 'y' : 'x',
       plugins:{legend:{display:false}},
       scales:{
@@ -1175,6 +1231,8 @@ async function searchNewFund(){
   }
 }
 
+let pendingFundPayload = null; // évite d'injecter du JSON dans un attribut HTML onclick (fragile, source probable du bug Live/Estimé)
+
 async function selectFundCandidate(item){
   const formEl = document.getElementById('addFundForm');
   formEl.style.display = 'block';
@@ -1192,6 +1250,20 @@ async function selectFundCandidate(item){
   const catOptions = CATS.map(c=>`<option value="${c}">${c}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
   const detectedDist = okMetrics && metrics.dist_policy ? metrics.dist_policy : null;
   const preselectCap = !detectedDist || detectedDist.startsWith('Capitalisant');
+
+  // Stocké en mémoire (pas dans le HTML) : plus robuste que d'injecter du
+  // JSON dans un attribut onclick, notamment si un nom de fonds ou un
+  // libellé de distribution contient des guillemets/apostrophes.
+  pendingFundPayload = {
+    symbol: item.symbol,
+    ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15,
+    ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
+    ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
+    last_price: okMetrics?metrics.last_price:null, last_price_date: okMetrics?metrics.last_price_date:null,
+    currency: okMetrics?(metrics.currency||'EUR'):'EUR',
+    dist_policy: detectedDist, dist_basis: okMetrics?metrics.dist_basis:null,
+    live: okMetrics === true,
+  };
 
   formEl.innerHTML = `
     <div class="note" style="margin-bottom:10px;">
@@ -1228,20 +1300,13 @@ async function selectFundCandidate(item){
       <input class="search-input" id="newFundSize" type="number" step="10" min="0" value="100">
     </div>
     <div class="note" style="margin-bottom:10px;">Éligibilité PEA et disponibilité sur Trade Republic : non vérifiées automatiquement — confirmez-les vous-même avant d'investir.</div>
-    <button class="run-btn" onclick='confirmAddFund(${JSON.stringify({
-      symbol:item.symbol,
-      ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15,
-      ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
-      ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
-      last_price: okMetrics?metrics.last_price:null, last_price_date: okMetrics?metrics.last_price_date:null,
-      currency: okMetrics?(metrics.currency||'EUR'):'EUR',
-      dist_policy: detectedDist, dist_basis: okMetrics?metrics.dist_basis:null,
-      live: okMetrics,
-    }).replace(/'/g,"&#39;")})'>Ajouter à mon univers d'ETF</button>
+    <button class="run-btn" onclick="confirmAddFund()">Ajouter à mon univers d'ETF</button>
   `;
 }
 
-function confirmAddFund(payload){
+function confirmAddFund(){
+  const payload = pendingFundPayload;
+  if(!payload){ console.warn('confirmAddFund appelé sans payload en attente'); return; }
   const name = document.getElementById('newFundName').value.trim() || payload.symbol;
   const isin = document.getElementById('newFundIsin').value.trim() || ('CUSTOM-'+payload.symbol);
   let category = document.getElementById('newFundCat').value;
@@ -1261,7 +1326,7 @@ function confirmAddFund(payload){
     last_price: payload.last_price, last_price_date: payload.last_price_date, price_currency: payload.currency || 'EUR',
     dist_policy: payload.dist_policy, dist_basis: payload.dist_basis,
     region: {}, currency:'EUR', dist, custom:true,
-    liveData: !!payload.live, yahooSymbol: payload.symbol, liveAt: payload.live ? new Date() : null, lastError:null,
+    liveData: payload.live === true, yahooSymbol: payload.symbol, liveAt: payload.live === true ? new Date() : null, lastError:null,
   };
   newAsset.sharpe = newAsset.ret/Math.max(newAsset.vol,0.05);
   ASSETS.push(newAsset);
@@ -1272,8 +1337,13 @@ function confirmAddFund(payload){
   renderTable();
   if(typeof renderChartSelect === 'function') renderChartSelect();
   document.getElementById('addFundForm').style.display='none';
-  document.getElementById('searchResults').innerHTML = `<div class="note" style="color:var(--teal);">« ${name} » ajouté à votre univers d'ETF (visible dans le tableau ci-dessus).</div>`;
+  document.getElementById('addFundForm').innerHTML='';
+  const resultsEl = document.getElementById('searchResults');
+  resultsEl.innerHTML = `<div class="note" style="color:var(--teal);">« ${name} » ajouté à votre univers d'ETF (${payload.live===true ? 'données Live' : 'données estimées'}, visible dans le tableau ci-dessus).</div>`;
   document.getElementById('etfSearchInput').value='';
+  pendingFundPayload = null;
+  // Le message de confirmation s'efface tout seul plutôt que de rester indéfiniment.
+  setTimeout(()=>{ if(resultsEl.innerHTML.includes(name)) resultsEl.innerHTML=''; }, 6000);
 }
 
 function removeCustomETF(id){
@@ -1363,7 +1433,7 @@ function displayResults(list, w, ret, vol, sharpe){
       labels: order.map(o=>o.a.name),
       datasets:[{ data: order.map(o=>o.w*100), backgroundColor: order.map(o=>CAT_COLORS[o.a.category]||'#8993a4'), borderColor:'#0d1218', borderWidth:3 }]
     },
-    options:{ plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>`${c.label}: ${c.raw.toFixed(1)}%`}}}, cutout:'62%' }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>`${c.label}: ${c.raw.toFixed(1)}%`}}}, cutout:'62%' }
   });
 }
 
@@ -1395,6 +1465,7 @@ function displayFrontier(list, mu, Sigma, optimal){
     },
     options:{
       responsive:true,
+      maintainAspectRatio:false,
       plugins:{
         legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
         tooltip:{callbacks:{label:(c)=> c.raw.label ? `${c.raw.label}: ${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}%` : `${c.raw.y.toFixed(1)}% / ${c.raw.x.toFixed(1)}%`}}
@@ -1476,6 +1547,21 @@ function renderChartTray(){
     tray.appendChild(chip);
   });
 }
+function onChartRangeChange(){
+  // Choisir une durée prédéfinie annule une éventuelle plage de dates personnalisée.
+  document.getElementById('chartStartDate').value = '';
+  document.getElementById('chartEndDate').value = '';
+  renderChartPage();
+}
+function onChartDatesChange(){
+  renderChartPage();
+}
+function clearChartDates(){
+  document.getElementById('chartStartDate').value = '';
+  document.getElementById('chartEndDate').value = '';
+  renderChartPage();
+}
+
 async function renderChartPage(){
   const wrap = document.getElementById('chartWrap');
   if(!wrap) return;
@@ -1486,15 +1572,28 @@ async function renderChartPage(){
   const range = document.getElementById('chartRange').value;
   const interval = document.getElementById('chartInterval').value;
   const normalize = document.getElementById('chartNormalize').checked;
+  const startDate = document.getElementById('chartStartDate').value;   // '' ou 'YYYY-MM-DD'
+  const endDate = document.getElementById('chartEndDate').value;
+  const useCustomDates = !!(startDate || endDate);
   const base = currentBackendBase();
+
+  const dateNote = document.getElementById('chartDateNote');
+  if(dateNote){
+    dateNote.textContent = useCustomDates
+      ? `Période personnalisée : du ${startDate || 'début disponible'} au ${endDate || "aujourd'hui"}. Toutes les courbes sont alignées sur cette période.`
+      : `Par défaut, la période est fixée par la case ci-dessus (« 3 ans », etc.). Renseignez une date de début et/ou de fin pour la remplacer — la date de fin par défaut est aujourd'hui si laissée vide. Toutes les courbes sont alignées sur la même période, sauf en « Maximum » où chaque fonds démarre à sa date de cotation d'origine.`;
+  }
 
   const seriesList = [];
   for(const id of ids){
     const a = ASSETS.find(x=>x.id===id);
     if(!a) continue;
     try{
-      const params = a.yahooSymbol ? `symbol=${encodeURIComponent(a.yahooSymbol)}` : `isin=${encodeURIComponent(a.isin)}`;
-      const res = await fetch(`${base}/api/history?${params}&range=${range}&interval=${interval}`);
+      const idParam = a.yahooSymbol ? `symbol=${encodeURIComponent(a.yahooSymbol)}` : `isin=${encodeURIComponent(a.isin)}`;
+      const periodParam = useCustomDates
+        ? `${startDate?('&start='+startDate):''}${endDate?('&end='+endDate):''}`
+        : `&range=${range}`;
+      const res = await fetch(`${base}/api/history?${idParam}${periodParam}&interval=${interval}`);
       if(!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
       if(data.error || !data.closes || data.closes.length===0) throw new Error(data.error || 'aucune donnée disponible');
@@ -1530,7 +1629,7 @@ async function renderChartPage(){
     return { label:s.name, data:points, borderColor:colors[i%colors.length], backgroundColor:colors[i%colors.length], pointRadius:0, borderWidth:2, tension:0.15 };
   });
 
-  wrap.innerHTML = '<canvas id="priceChartCanvas" height="115"></canvas>' +
+  wrap.innerHTML = '<div class="chart-box tall"><canvas id="priceChartCanvas"></canvas></div>' +
     (failed.length ? `<div class="note" style="margin-top:8px;color:var(--rose);">Non chargé : ${failed.map(f=>f.name+' ('+f.error+')').join(', ')}.</div>` : '') +
     '<div class="note" style="margin-top:8px;">Les dates de cotation peuvent différer légèrement d\'un fonds à l\'autre selon leur place boursière.</div>';
 
@@ -1542,6 +1641,7 @@ async function renderChartPage(){
       data:{ labels, datasets },
       options:{
         responsive:true,
+        maintainAspectRatio:false,
         interaction:{mode:'nearest', axis:'x', intersect:false},
         plugins:{
           legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},

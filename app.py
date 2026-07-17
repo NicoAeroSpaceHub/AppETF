@@ -360,11 +360,19 @@ def metrics_by_symbol(symbol: str):
 
 
 @app.get("/api/history")
-def get_history(symbol: str = None, isin: str = None, range: str = "3y", interval: str = "1wk"):
+def get_history(symbol: str = None, isin: str = None, range: str = "3y", interval: str = "1wk",
+                 start: str = None, end: str = None):
     """Historique de cours complet pour un fonds — utilisé pour le
     graphique de prix dans le temps (clic sur un nom de fonds), avec
     superposition possible de plusieurs fonds côté frontend. Accepte soit
-    un ticker Yahoo direct (`symbol`), soit un ISIN à résoudre (`isin`)."""
+    un ticker Yahoo direct (`symbol`), soit un ISIN à résoudre (`isin`).
+
+    Deux modes :
+      - `range` (ex. "3y", "max") : fenêtre glissante se terminant aujourd'hui.
+      - `start`/`end` (format YYYY-MM-DD, l'un ou l'autre optionnel) : plage de
+        dates explicite, prioritaire sur `range` si fournie. `end` vaut
+        aujourd'hui si omis ; `start` vaut le début de l'historique disponible
+        si omis."""
     if not symbol and isin:
         symbol = resolve_symbol(isin)
     if not symbol:
@@ -376,16 +384,29 @@ def get_history(symbol: str = None, isin: str = None, range: str = "3y", interva
         range = "3y"
     if interval not in allowed_intervals:
         interval = "1wk"
-    cache_key = f"history:{symbol}:{range}:{interval}"
+
+    use_dates = bool(start or end)
+    cache_key = f"history:{symbol}:{interval}:" + (f"{start or ''}:{end or ''}" if use_dates else range)
     now = time.time()
     cached = _cache.get(cache_key)
     if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
         return cached[1]
     try:
-        hist = yf.Ticker(symbol).history(period=range, interval=interval, auto_adjust=True)
+        tkr = yf.Ticker(symbol)
+        if use_dates:
+            kwargs = {"interval": interval, "auto_adjust": True}
+            if start:
+                kwargs["start"] = start
+            if end:
+                # yfinance traite `end` comme exclusif : on ajoute un jour pour
+                # inclure la date de fin demandée par l'utilisateur.
+                kwargs["end"] = (pd.Timestamp(end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            hist = tkr.history(**kwargs)
+        else:
+            hist = tkr.history(period=range, interval=interval, auto_adjust=True)
         closes = hist["Close"].dropna()
         if closes.empty:
-            raise ValueError("aucun historique disponible")
+            raise ValueError("aucun historique disponible sur cette période")
         result = {
             "symbol": symbol,
             "dates": [d.strftime("%Y-%m-%d") for d in closes.index],
