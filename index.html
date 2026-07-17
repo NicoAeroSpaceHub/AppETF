@@ -101,6 +101,25 @@ a{color:inherit;}
 .layout{display:grid;grid-template-columns:270px 1fr;gap:24px;align-items:start;}
 @media (max-width:980px){.layout{grid-template-columns:1fr;}}
 
+/* ---------- Onglets ---------- */
+.tabbar{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:14px;}
+.tab-btn{font-family:'Space Grotesk',sans-serif;font-size:13.5px;font-weight:600;padding:9px 18px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-dim);cursor:pointer;transition:all .15s ease;}
+.tab-btn:hover{color:var(--text);border-color:var(--teal-dim);}
+.tab-btn.active{background:linear-gradient(100deg,rgba(47,215,179,0.16),rgba(124,143,255,0.16));border-color:var(--teal);color:var(--teal);}
+.page{display:none;}
+.page.active{display:block;animation:fadein .2s ease;}
+@keyframes fadein{from{opacity:0;} to{opacity:1;}}
+
+/* ---------- Sélecteur de colonnes ---------- */
+.col-picker{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:20;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;min-width:230px;max-height:340px;overflow-y:auto;box-shadow:0 12px 30px rgba(0,0,0,0.4);}
+.col-picker.open{display:block;}
+.col-picker .grp-label{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-faint);margin:10px 0 5px;}
+.col-picker .grp-label:first-child{margin-top:0;}
+.col-picker label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);padding:4px 2px;cursor:pointer;white-space:nowrap;}
+.col-picker input{accent-color:var(--teal);}
+.fund-link{cursor:pointer;text-decoration:none;border-bottom:1px dashed var(--text-faint);}
+.fund-link:hover{color:var(--teal);border-color:var(--teal);}
+
 .panel{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;}
 .panel + .panel{margin-top:18px;}
 .panel-title{font-size:12.5px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-faint);margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;}
@@ -215,6 +234,13 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 @media (max-width:640px){
   .wrap{padding:18px 14px 60px;}
   .hero-text h1{font-size:26px;}
+  .col-picker{right:0;left:auto;max-width:min(260px,88vw);}
+  table{font-size:12px;min-width:640px;}
+  thead th, tbody td{padding:9px 8px;}
+  .chk{width:19px;height:19px;}
+  .tab-btn{padding:8px 13px;font-size:12.5px;}
+  .invest-input input#backendUrl{width:150px;}
+  .name-cell b{font-size:12.5px;}
 }
 </style>
 </head>
@@ -248,6 +274,13 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
     </div>
   </div>
 
+  <div class="tabbar" id="tabbar">
+    <button class="tab-btn active" data-page="explorer" onclick="switchPage('explorer')">🔍 Explorer</button>
+    <button class="tab-btn" data-page="graphique" onclick="switchPage('graphique')">📈 Graphique</button>
+    <button class="tab-btn" data-page="portefeuille" onclick="switchPage('portefeuille')">🧮 Portefeuille</button>
+  </div>
+
+  <div class="page active" id="page-explorer">
   <div class="layout">
     <!-- SIDEBAR FILTERS -->
     <div class="sidebar">
@@ -310,7 +343,11 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       <div class="panel">
         <div class="table-toolbar">
           <div class="panel-title" style="margin:0;">Univers d'ETF filtré</div>
-          <div class="count" id="resultCount">— résultats</div>
+          <div style="display:flex;align-items:center;gap:10px;position:relative;">
+            <div class="count" id="resultCount">— résultats</div>
+            <button class="filter-toggle" style="display:inline-flex;" onclick="toggleColumnPicker()">⚙ Colonnes</button>
+            <div id="columnPicker" class="col-picker"></div>
+          </div>
         </div>
         <div class="table-toolbar" style="margin-top:-4px;flex-wrap:wrap;">
           <button class="filter-toggle" style="display:inline-flex;" id="yahooBtn" onclick="refreshFromYahoo()">↻ Actualiser depuis le backend</button>
@@ -320,22 +357,10 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
           </div>
           <div class="count" id="yahooStatus" style="flex-basis:100%;">Données estimées par défaut · non actualisées. Si cette page est servie par son propre backend (ex. déployée sur Render), laissez le champ vide. Sinon, renseignez l'URL de votre backend (ex. http://localhost:8000 ou https://votre-backend.onrender.com). Le premier appel après une période d'inactivité peut prendre jusqu'à une minute (le service gratuit "se réveille").</div>
         </div>
+        <div class="note" style="margin-bottom:8px;">Astuce : cliquez sur le nom d'un fonds pour voir son cours dans le temps (onglet Graphique).</div>
         <div class="table-scroll">
           <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th data-sort="name">ETF</th>
-                <th data-sort="category">Zone</th>
-                <th data-sort="ter">TER</th>
-                <th data-sort="ret">Rendement annualisé</th>
-                <th data-sort="vol">Volatilité</th>
-                <th data-sort="sharpe">Rend./Vol.</th>
-                <th data-sort="fundSize">Encours</th>
-                <th>Source</th>
-                <th></th>
-              </tr>
-            </thead>
+            <thead id="tableHead"></thead>
             <tbody id="tableBody"></tbody>
           </table>
         </div>
@@ -345,7 +370,7 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       <div class="panel">
         <div class="panel-title">Ajouter un ETF (recherche Yahoo Finance)</div>
         <div class="note" style="margin-bottom:12px;">
-          Cette recherche interroge Yahoo Finance : elle peut retrouver un fonds par son nom ou son ISIN et calculer sa performance réelle, mais elle ne sait <b>ni</b> s'il est éligible au PEA, <b>ni</b> s'il est capitalisant ou distribuant, <b>ni</b> s'il est listé sur Trade Republic — ces trois points sont à vérifier vous-même (fiche DIC de l'émetteur, app du courtier) avant de valider l'ajout.
+          Cette recherche interroge Yahoo Finance : elle peut retrouver un fonds par son nom ou son ISIN et calculer sa performance réelle, mais elle ne sait <b>ni</b> s'il est éligible au PEA, <b>ni</b> s'il est capitalisant ou distribuant avec certitude, <b>ni</b> s'il est listé sur Trade Republic — ces points sont à confirmer vous-même (fiche DIC de l'émetteur, app du courtier) avant de valider l'ajout.
         </div>
         <div class="range-row" style="gap:8px;margin-bottom:10px;">
           <input class="search-input" id="etfSearchInput" placeholder="Nom du fonds ou ISIN (ex. Lyxor PEA, IE00…)" style="flex:1;">
@@ -355,69 +380,108 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
         <div id="addFundForm" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft);"></div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">
-          Comparaison des ETF sélectionnés
-          <div class="metric-toggle" id="metricToggle">
-            <button class="active" data-metric="ter">Frais</button>
-            <button data-metric="ret">Rendement</button>
-            <button data-metric="vol">Volatilité</button>
-          </div>
-        </div>
-        <div id="compareWrap">
-          <div class="placeholder">Sélectionnez au moins un ETF dans le tableau ci-dessus (case à cocher) pour afficher la comparaison.</div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Optimisation de portefeuille</div>
-
-        <div class="obj-options" id="objOptions"></div>
-
-        <div class="invest-input">
-          <span>Montant à investir</span>
-          <input type="number" id="investAmount" value="10000" min="0" step="100">
-          <span>€</span>
-        </div>
-
-        <button class="run-btn" id="runBtn" onclick="runOptimization()">Lancer l'optimisation (CMA-ES)</button>
-        <div class="note" id="optNote" style="margin-top:10px;"></div>
-      </div>
-
-      <div class="panel" id="resultsPanel" style="display:none;">
-        <div class="panel-title">Portefeuille optimal</div>
-        <div class="results-grid">
-          <div class="metric-card">
-            <div class="label">Rendement annualisé attendu</div>
-            <div class="value teal" id="resRet">—</div>
-          </div>
-          <div class="metric-card">
-            <div class="label">Volatilité annualisée attendue</div>
-            <div class="value amber" id="resVol">—</div>
-          </div>
-          <div class="metric-card">
-            <div class="label">Ratio rendement / volatilité</div>
-            <div class="value indigo" id="resSharpe">—</div>
-          </div>
-        </div>
-        <div class="alloc-wrap">
-          <canvas id="allocDonut"></canvas>
-          <div class="alloc-list" id="allocList"></div>
-        </div>
-      </div>
-
-      <div class="panel" id="frontierPanel" style="display:none;">
-        <div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente (indicatif)</div>
-        <canvas id="frontierScatter" height="110"></canvas>
-      </div>
-
-      <div class="disclaimer">
-        <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. Les données de frais et d'encours sont issues d'une sélection publique d'ETF communément proposés sur le PEA ; par défaut, les rendements et volatilités sont des <b>estimations indicatives</b> basées sur les caractéristiques historiques générales des indices suivis, et non des séries de cours réelles à jour. Le bouton « Actualiser depuis le backend » interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer un rendement et une volatilité réalisés sur 3 ans à partir des cours de clôture hebdomadaires réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. En cas d'échec, l'estimation initiale est conservée et signalée comme telle (badge « Estimé », avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution (capitalisant/distribuant) et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
-        <div class="footer-links"><span>Trade Republic — instruments éligibles PEA</span><span>Sources : fiches ETF des émetteurs (Amundi, iShares, BNP Paribas Easy)</span></div>
-      </div>
-
     </div>
   </div>
+  </div>
+
+  <div class="page" id="page-graphique">
+
+    <div class="panel">
+      <div class="panel-title">Cours des ETF dans le temps</div>
+      <div class="note" style="margin-bottom:10px;">Cliquez sur un nom de fonds dans l'onglet Explorer pour l'ajouter ici, ou utilisez la liste ci-dessous. Plusieurs fonds peuvent être superposés sur le même graphique.</div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <select class="search-input" id="chartAddSelect" style="flex:1;min-width:200px;"></select>
+        <button class="run-btn" style="width:auto;padding:9px 16px;margin:0;font-size:12.5px;" onclick="addSelectedToChart()">+ Ajouter au graphique</button>
+        <select class="search-input" id="chartRange" style="width:auto;" onchange="renderChartPage()">
+          <option value="1y">1 an</option>
+          <option value="3y" selected>3 ans</option>
+          <option value="5y">5 ans</option>
+          <option value="10y">10 ans</option>
+          <option value="max">Maximum</option>
+        </select>
+        <select class="search-input" id="chartInterval" style="width:auto;" onchange="renderChartPage()">
+          <option value="1d">Quotidien</option>
+          <option value="1wk" selected>Hebdomadaire</option>
+          <option value="1mo">Mensuel</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);">
+          <input type="checkbox" class="chk" id="chartNormalize" checked onchange="renderChartPage()"> Base 100 (comparer les évolutions)
+        </label>
+      </div>
+      <div class="tray" id="chartTray"></div>
+      <div id="chartWrap" style="margin-top:14px;">
+        <div class="placeholder">Ajoutez au moins un fonds ci-dessus pour afficher son cours.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">
+        Comparaison des ETF sélectionnés (onglet Explorer)
+        <div class="metric-toggle" id="metricToggle">
+          <button class="active" data-metric="ter">Frais</button>
+          <button data-metric="ret">Rendement</button>
+          <button data-metric="vol">Volatilité</button>
+        </div>
+      </div>
+      <div id="compareWrap">
+        <div class="placeholder">Sélectionnez au moins un ETF dans le tableau de l'onglet Explorer (case à cocher) pour afficher la comparaison.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="page" id="page-portefeuille">
+
+    <div class="panel">
+      <div class="panel-title">Optimisation de portefeuille</div>
+      <div class="note" style="margin-bottom:12px;">Basée sur les ETF cochés dans le tableau de l'onglet Explorer.</div>
+
+      <div class="obj-options" id="objOptions"></div>
+
+      <div class="invest-input">
+        <span>Montant à investir</span>
+        <input type="number" id="investAmount" value="10000" min="0" step="100">
+        <span>€</span>
+      </div>
+
+      <button class="run-btn" id="runBtn" onclick="runOptimization()">Lancer l'optimisation (CMA-ES)</button>
+      <div class="note" id="optNote" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="panel" id="resultsPanel" style="display:none;">
+      <div class="panel-title">Portefeuille optimal</div>
+      <div class="results-grid">
+        <div class="metric-card">
+          <div class="label">Rendement annualisé attendu</div>
+          <div class="value teal" id="resRet">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Volatilité annualisée attendue</div>
+          <div class="value amber" id="resVol">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Ratio rendement / volatilité</div>
+          <div class="value indigo" id="resSharpe">—</div>
+        </div>
+      </div>
+      <div class="alloc-wrap">
+        <canvas id="allocDonut"></canvas>
+        <div class="alloc-list" id="allocList"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="frontierPanel" style="display:none;">
+      <div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente (indicatif)</div>
+      <canvas id="frontierScatter" height="110"></canvas>
+    </div>
+
+  </div>
+
+  <div class="disclaimer">
+    <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. Les données de frais et d'encours sont issues d'une sélection publique d'ETF communément proposés sur le PEA ; par défaut, les rendements et volatilités sont des <b>estimations indicatives</b> basées sur les caractéristiques historiques générales des indices suivis, et non des séries de cours réelles à jour. Le bouton « Actualiser depuis le backend » interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer un rendement et une volatilité réalisés sur plusieurs périodes à partir des cours réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. La détection capitalisant/distribuant est déduite de l'historique réel des dividendes versés (un fonds capitalisant n'en verse jamais) : fiable dans la plupart des cas mais pas infaillible, en particulier pour un fonds distribuant très récemment lancé. En cas d'échec, l'estimation initiale est conservée et signalée comme telle (badge « Estimé », avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
+    <div class="footer-links"><span>Trade Republic — instruments éligibles PEA</span><span>Sources : fiches ETF des émetteurs (Amundi, iShares, BNP Paribas Easy)</span></div>
+  </div>
+
 </div>
 
 <script>
@@ -441,7 +505,13 @@ const ASSETS = [
   {id:'val1', name:'Amundi MSCI EMU Value Factor', isin:'LU1598690169', category:'Smart Beta', index:'MSCI EMU Value Factor', ter:0.40, fundSize:250, ret:6.8, vol:16.5, region:{eu:1}},
   {id:'mon1', name:'Amundi PEA Euro Court Terme', isin:'FR0013346681', category:'Monétaire', index:'€STR / Euro court terme', ter:0.25, fundSize:300, ret:2.7, vol:0.4, region:{}, cash:true},
 ];
-ASSETS.forEach(a=>{ a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05); a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; a.custom=false; });
+ASSETS.forEach(a=>{
+  a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05);
+  a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; a.custom=false;
+  a.ret_1y=null; a.vol_1y=null; a.ret_3y=a.ret; a.vol_3y=a.vol; a.ret_5y=null; a.vol_5y=null;
+  a.last_price=null; a.last_price_date=null; a.price_currency='EUR';
+  a.dist_policy=null; a.dist_basis=null;
+});
 
 /* Fonds ajoutés manuellement par l'utilisateur (recherche Yahoo Finance),
    persistés en local sur cet appareil/navigateur pour survivre aux
@@ -476,6 +546,50 @@ loadCustomETFs();
 refreshCategoriesUI();
 
 /* =====================================================================
+   1bis. COLONNES CONFIGURABLES DU TABLEAU
+   ===================================================================== */
+function fmtPct(v, kind){
+  if(v==null || isNaN(v)) return '<span class="num" style="color:var(--text-faint);">—</span>';
+  const cls = kind==='vol' ? 'num-vol' : 'num-pos';
+  const sign = kind!=='vol' && v>=0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+const COLUMN_DEFS = [
+  {id:'category',    label:'Zone',                 group:'Identité',       default:true,  sortKey:'category', render:a=>`<span class="cat-badge">${a.category}</span>`},
+  {id:'dist_policy', label:'Distribution',          group:'Identité',       default:true,  sortKey:null,
+    render:a=> a.dist_policy
+      ? `<span class="cat-badge" title="Déduit automatiquement : ${a.dist_basis||''}">${a.dist_policy}</span>`
+      : `<span class="cat-badge" style="color:var(--text-faint);" title="Non vérifié via Yahoo Finance — valeur déclarée">${a.dist} (déclaré)</span>`},
+  {id:'currency',     label:'Devise',                group:'Identité',       default:false, sortKey:'currency', render:a=>`<span class="num">${a.currency}</span>`},
+  {id:'source',       label:'Source',                group:'Identité',       default:true,  sortKey:null,
+    render:a=> a.liveData
+      ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Calculé à partir des cours réels Yahoo Finance (${a.yahooSymbol||''}), ${a.liveAt?a.liveAt.toLocaleString('fr-FR'):''}">● Live</span>`
+      : `<span class="cat-badge" title="Estimation indicative${a.lastError?(' — échec de la dernière actualisation : '+a.lastError):''}">○ Estimé</span>`},
+  {id:'last_price',   label:'Dernier cours',         group:'Cours',          default:true,  sortKey:'last_price',
+    render:a=> a.last_price!=null ? `<span class="num">${a.last_price.toFixed(2)} ${a.price_currency||'EUR'}</span><br><span style="font-size:10px;color:var(--text-faint);">${a.last_price_date||''}</span>` : '<span class="num" style="color:var(--text-faint);">—</span>'},
+  {id:'ter',          label:'TER',                   group:'Frais & taille', default:true,  sortKey:'ter',     render:a=>`<span class="num">${a.ter.toFixed(2)}%</span>`},
+  {id:'fundSize',     label:'Encours',                group:'Frais & taille', default:true,  sortKey:'fundSize',render:a=>`<span class="num">${a.fundSize.toLocaleString('fr-FR')}M€</span>`},
+  {id:'ret_1y',       label:'Rendement 1 an',         group:'Performance',    default:false, sortKey:'ret_1y',  render:a=>fmtPct(a.ret_1y,'ret')},
+  {id:'ret_3y',       label:'Rendement 3 ans',        group:'Performance',    default:true,  sortKey:'ret_3y',  render:a=>fmtPct(a.ret_3y,'ret')},
+  {id:'ret_5y',       label:'Rendement 5 ans',        group:'Performance',    default:false, sortKey:'ret_5y',  render:a=>fmtPct(a.ret_5y,'ret')},
+  {id:'vol_1y',       label:'Volatilité 1 an',        group:'Risque',         default:false, sortKey:'vol_1y',  render:a=>fmtPct(a.vol_1y,'vol')},
+  {id:'vol_3y',       label:'Volatilité 3 ans',       group:'Risque',         default:true,  sortKey:'vol_3y',  render:a=>fmtPct(a.vol_3y,'vol')},
+  {id:'vol_5y',       label:'Volatilité 5 ans',       group:'Risque',         default:false, sortKey:'vol_5y',  render:a=>fmtPct(a.vol_5y,'vol')},
+  {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',  render:a=>`<span class="num">${a.sharpe.toFixed(2)}</span>`},
+];
+function loadColumnPrefs(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('columnPrefs')||'null');
+    if(Array.isArray(saved) && saved.length) return new Set(saved.filter(id=>COLUMN_DEFS.some(c=>c.id===id)));
+  }catch(e){ /* ignore */ }
+  return new Set(COLUMN_DEFS.filter(c=>c.default).map(c=>c.id));
+}
+function saveColumnPrefs(){
+  localStorage.setItem('columnPrefs', JSON.stringify([...state.columns]));
+}
+
+
+/* =====================================================================
    2. ETAT
    ===================================================================== */
 let state = {
@@ -483,11 +597,13 @@ let state = {
   dist: new Set(['Capitalisant']),
   ccy: new Set(['EUR']),
   selected: new Set(['wld1','us1','eu2','em1']),
-  sort: {key:'ret', dir:-1},
+  sort: {key:'ret_3y', dir:-1},
   metric: 'ter',
   objective: 'sharpe',
   targetVol: 12,
   targetReturn: 8,
+  columns: loadColumnPrefs(),
+  chartFunds: new Set(),
 };
 
 /* =====================================================================
@@ -556,42 +672,44 @@ function sortAssets(list){
   const {key,dir} = state.sort;
   return [...list].sort((a,b)=>{
     let va=a[key], vb=b[key];
+    if(va==null && vb==null) return 0;
+    if(va==null) return 1;   // valeurs manquantes toujours en fin de liste
+    if(vb==null) return -1;
     if(typeof va === 'string') return va.localeCompare(vb)*dir;
     return (va-vb)*dir;
   });
 }
-document.querySelectorAll('thead th[data-sort]').forEach(th=>{
-  th.addEventListener('click', ()=>{
-    const key = th.getAttribute('data-sort');
-    if(state.sort.key===key) state.sort.dir *= -1; else state.sort = {key, dir:-1};
-    renderTable();
-  });
-});
 
 function renderTable(){
   const list = sortAssets(filteredAssets());
+  const activeCols = COLUMN_DEFS.filter(c=>state.columns.has(c.id));
+
+  const thead = document.getElementById('tableHead');
+  let headHtml = '<tr><th></th><th data-sort="name">ETF</th>';
+  activeCols.forEach(c=>{ headHtml += `<th ${c.sortKey?`data-sort="${c.sortKey}"`:''}>${c.label}</th>`; });
+  headHtml += '<th></th></tr>';
+  thead.innerHTML = headHtml;
+  thead.querySelectorAll('th[data-sort]').forEach(th=>{
+    th.classList.toggle('sorted', th.getAttribute('data-sort')===state.sort.key);
+    th.addEventListener('click', ()=>{
+      const key = th.getAttribute('data-sort');
+      if(state.sort.key===key) state.sort.dir *= -1; else state.sort = {key, dir:-1};
+      renderTable();
+    });
+  });
+
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
   document.getElementById('resultCount').textContent = list.length + ' résultat' + (list.length>1?'s':'');
-  document.querySelectorAll('thead th[data-sort]').forEach(th=>{
-    th.classList.toggle('sorted', th.getAttribute('data-sort')===state.sort.key);
-  });
 
   list.forEach(a=>{
     const tr = document.createElement('tr');
     tr.className = state.selected.has(a.id) ? 'selected' : '';
-    tr.innerHTML = `
-      <td class="checkbox-cell"><input type="checkbox" class="chk" ${state.selected.has(a.id)?'checked':''} data-id="${a.id}"></td>
-      <td><div class="name-cell"><b>${a.name}</b><span class="isin">${a.isin} · ${a.index}</span></div></td>
-      <td><span class="cat-badge">${a.category}</span></td>
-      <td class="num">${a.ter.toFixed(2)}%</td>
-      <td class="num-pos">+${a.ret.toFixed(1)}%</td>
-      <td class="num-vol">${a.vol.toFixed(1)}%</td>
-      <td class="num">${a.sharpe.toFixed(2)}</td>
-      <td class="num">${a.fundSize.toLocaleString('fr-FR')}M€</td>
-      <td>${a.liveData ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Calculé à partir des cours réels Yahoo Finance (${a.yahooSymbol||''}), ${a.liveAt?a.liveAt.toLocaleString('fr-FR'):''}">● Live</span>` : `<span class="cat-badge" title="Estimation indicative${a.lastError?(' — échec de la dernière actualisation : '+a.lastError):''}">○ Estimé</span>`}</td>
-      <td class="checkbox-cell">${a.custom ? `<button class="tray-chip button" style="border:none;background:none;color:var(--text-faint);cursor:pointer;font-size:15px;" title="Retirer cet ETF ajouté manuellement" onclick="removeCustomETF('${a.id}')">×</button>` : ''}</td>
-    `;
+    let rowHtml = `<td class="checkbox-cell"><input type="checkbox" class="chk" ${state.selected.has(a.id)?'checked':''} data-id="${a.id}"></td>`;
+    rowHtml += `<td><div class="name-cell"><b class="fund-link" data-open-chart="${a.id}" title="Voir le cours dans le temps">${a.name}</b><span class="isin">${a.isin} · ${a.index}</span></div></td>`;
+    activeCols.forEach(c=>{ rowHtml += `<td>${c.render(a)}</td>`; });
+    rowHtml += `<td class="checkbox-cell">${a.custom ? `<button class="tray-chip button" style="border:none;background:none;color:var(--text-faint);cursor:pointer;font-size:15px;" title="Retirer cet ETF ajouté manuellement" onclick="removeCustomETF('${a.id}')">×</button>` : ''}</td>`;
+    tr.innerHTML = rowHtml;
     tbody.appendChild(tr);
   });
 
@@ -602,10 +720,47 @@ function renderTable(){
       renderTable(); renderTray(); renderCompare(); resetResults();
     });
   });
+  tbody.querySelectorAll('[data-open-chart]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      addFundToChart(el.getAttribute('data-open-chart'));
+      switchPage('graphique');
+    });
+  });
 
   renderTray();
   renderCompare();
 }
+
+/* =====================================================================
+   4bis. SÉLECTEUR DE COLONNES
+   ===================================================================== */
+function renderColumnPicker(){
+  const el = document.getElementById('columnPicker');
+  const groups = [...new Set(COLUMN_DEFS.map(c=>c.group))];
+  el.innerHTML = groups.map(g=>{
+    const cols = COLUMN_DEFS.filter(c=>c.group===g);
+    return `<div class="grp-label">${g}</div>` + cols.map(c=>`<label><input type="checkbox" data-col="${c.id}" ${state.columns.has(c.id)?'checked':''}> ${c.label}</label>`).join('');
+  }).join('');
+  el.querySelectorAll('input[data-col]').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const id = e.target.getAttribute('data-col');
+      if(e.target.checked) state.columns.add(id); else state.columns.delete(id);
+      saveColumnPrefs();
+      renderTable();
+    });
+  });
+}
+function toggleColumnPicker(){
+  const el = document.getElementById('columnPicker');
+  if(!el.dataset.built){ renderColumnPicker(); el.dataset.built = '1'; }
+  el.classList.toggle('open');
+}
+document.addEventListener('click', (e)=>{
+  const picker = document.getElementById('columnPicker');
+  if(picker && picker.classList.contains('open') && !picker.contains(e.target) && e.target.getAttribute('onclick')!=='toggleColumnPicker()'){
+    picker.classList.remove('open');
+  }
+});
 
 function renderTray(){
   const tray = document.getElementById('selectionTray');
@@ -956,8 +1111,15 @@ async function refreshFromYahoo(){
         a.lastError = r.error || 'réponse incomplète du backend';
         fail++; failedNames.push(a.name);
       }else{
-        a.ret = r.ret; a.vol = Math.max(r.vol, 0.05);
+        a.ret = r.ret_3y!=null ? r.ret_3y : r.ret; a.vol = Math.max(r.vol_3y!=null ? r.vol_3y : r.vol, 0.05);
+        a.ret_1y = r.ret_1y; a.vol_1y = r.vol_1y!=null ? Math.max(r.vol_1y,0.01) : null;
+        a.ret_3y = a.ret; a.vol_3y = a.vol;
+        a.ret_5y = r.ret_5y; a.vol_5y = r.vol_5y!=null ? Math.max(r.vol_5y,0.01) : null;
         a.sharpe = a.ret/Math.max(a.vol,0.05);
+        a.last_price = r.last_price!=null ? r.last_price : a.last_price;
+        a.last_price_date = r.last_price_date || a.last_price_date;
+        a.dist_policy = r.dist_policy || a.dist_policy;
+        a.dist_basis = r.dist_basis || a.dist_basis;
         a.liveData = true; a.liveAt = new Date();
         a.yahooSymbol = r.symbol; a.lastError = null;
         ok++;
@@ -1028,11 +1190,13 @@ async function selectFundCandidate(item){
 
   const okMetrics = metrics && !metrics.error && metrics.ret!=null && metrics.vol!=null;
   const catOptions = CATS.map(c=>`<option value="${c}">${c}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
+  const detectedDist = okMetrics && metrics.dist_policy ? metrics.dist_policy : null;
+  const preselectCap = !detectedDist || detectedDist.startsWith('Capitalisant');
 
   formEl.innerHTML = `
     <div class="note" style="margin-bottom:10px;">
       ${okMetrics
-        ? `Données réelles récupérées (${metrics.points} points d'historique) : rendement annualisé <b style="color:var(--teal);">${metrics.ret.toFixed(1)}%</b>, volatilité <b style="color:var(--amber);">${metrics.vol.toFixed(1)}%</b>.`
+        ? `Données réelles récupérées (${metrics.points} points d'historique) : rendement annualisé (3 ans) <b style="color:var(--teal);">${metrics.ret.toFixed(1)}%</b>, volatilité <b style="color:var(--amber);">${metrics.vol.toFixed(1)}%</b>${metrics.last_price!=null ? `, dernier cours <b>${metrics.last_price.toFixed(2)} ${metrics.currency||''}</b> (${metrics.last_price_date||''})` : ''}.${detectedDist ? ` Distribution détectée : <b>${detectedDist}</b> (${metrics.dist_basis||'déduit des dividendes/nom'}) — à confirmer ci-dessous.` : ''}`
         : `Impossible de calculer le rendement/volatilité réels pour ${item.symbol} (${metrics && metrics.error ? metrics.error : 'erreur inconnue'}). Vous pouvez tout de même l'ajouter en renseignant des valeurs manuellement, mais elles ne seront pas fiables.`}
     </div>
     <div class="filter-group">
@@ -1049,10 +1213,10 @@ async function selectFundCandidate(item){
       <input class="search-input" id="newFundCatCustom" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:6px;">
     </div>
     <div class="filter-group">
-      <label class="filter-label">Politique de distribution — à VOUS de vérifier (fiche DIC)</label>
+      <label class="filter-label">Politique de distribution — à VOUS de confirmer (fiche DIC)${detectedDist ? ` — suggestion : ${detectedDist}` : ''}</label>
       <div class="chip-row">
-        <div class="chip active" data-dist="Capitalisant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Capitalisant</div>
-        <div class="chip" data-dist="Distribuant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Distribuant</div>
+        <div class="chip ${preselectCap?'active':''}" data-dist="Capitalisant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Capitalisant</div>
+        <div class="chip ${!preselectCap?'active':''}" data-dist="Distribuant" onclick="document.querySelectorAll('[data-dist]').forEach(c=>c.classList.remove('active'));this.classList.add('active');">Distribuant</div>
       </div>
     </div>
     <div class="filter-group">
@@ -1064,7 +1228,16 @@ async function selectFundCandidate(item){
       <input class="search-input" id="newFundSize" type="number" step="10" min="0" value="100">
     </div>
     <div class="note" style="margin-bottom:10px;">Éligibilité PEA et disponibilité sur Trade Republic : non vérifiées automatiquement — confirmez-les vous-même avant d'investir.</div>
-    <button class="run-btn" onclick='confirmAddFund(${JSON.stringify({symbol:item.symbol, ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15, live: okMetrics}).replace(/'/g,"&#39;")})'>Ajouter à mon univers d'ETF</button>
+    <button class="run-btn" onclick='confirmAddFund(${JSON.stringify({
+      symbol:item.symbol,
+      ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15,
+      ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
+      ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
+      last_price: okMetrics?metrics.last_price:null, last_price_date: okMetrics?metrics.last_price_date:null,
+      currency: okMetrics?(metrics.currency||'EUR'):'EUR',
+      dist_policy: detectedDist, dist_basis: okMetrics?metrics.dist_basis:null,
+      live: okMetrics,
+    }).replace(/'/g,"&#39;")})'>Ajouter à mon univers d'ETF</button>
   `;
 }
 
@@ -1083,6 +1256,10 @@ function confirmAddFund(payload){
     id: 'custom-' + payload.symbol.replace(/[^a-zA-Z0-9]/g,'') + '-' + Date.now(),
     name, isin, category, index: name, ter, fundSize,
     ret: payload.ret, vol: Math.max(payload.vol, 0.05),
+    ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret, vol_3y: Math.max(payload.vol,0.05),
+    ret_5y: payload.ret_5y, vol_5y: payload.vol_5y,
+    last_price: payload.last_price, last_price_date: payload.last_price_date, price_currency: payload.currency || 'EUR',
+    dist_policy: payload.dist_policy, dist_basis: payload.dist_basis,
     region: {}, currency:'EUR', dist, custom:true,
     liveData: !!payload.live, yahooSymbol: payload.symbol, liveAt: payload.live ? new Date() : null, lastError:null,
   };
@@ -1093,6 +1270,7 @@ function confirmAddFund(payload){
   state.cats.add(category);
   initFilters();
   renderTable();
+  if(typeof renderChartSelect === 'function') renderChartSelect();
   document.getElementById('addFundForm').style.display='none';
   document.getElementById('searchResults').innerHTML = `<div class="note" style="color:var(--teal);">« ${name} » ajouté à votre univers d'ETF (visible dans le tableau ci-dessus).</div>`;
   document.getElementById('etfSearchInput').value='';
@@ -1103,10 +1281,13 @@ function removeCustomETF(id){
   if(idx===-1) return;
   ASSETS.splice(idx,1);
   state.selected.delete(id);
+  if(state.chartFunds) state.chartFunds.delete(id);
   saveCustomETFs();
   refreshCategoriesUI();
   initFilters();
   renderTable();
+  if(typeof renderChartSelect === 'function') renderChartSelect();
+  if(typeof renderChartTray === 'function') renderChartTray();
 }
 
 /* =====================================================================
@@ -1242,12 +1423,151 @@ function initFilterCollapse(){
 }
 
 /* =====================================================================
+   9bis2. ONGLETS (pages)
+   ===================================================================== */
+function switchPage(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const target = document.getElementById('page-'+page);
+  if(target) target.classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-page')===page));
+  if(page==='graphique'){ renderChartSelect(); }
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* =====================================================================
+   9bis3. GRAPHIQUE DE COURS (multi-fonds superposés)
+   ===================================================================== */
+let priceChart;
+function renderChartSelect(){
+  const sel = document.getElementById('chartAddSelect');
+  if(!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— choisir un fonds à ajouter —</option>' + ASSETS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  if(current) sel.value = current;
+}
+function addSelectedToChart(){
+  const sel = document.getElementById('chartAddSelect');
+  if(!sel.value) return;
+  addFundToChart(sel.value);
+  sel.value = '';
+}
+function addFundToChart(id){
+  state.chartFunds.add(id);
+  renderChartTray();
+  renderChartPage();
+}
+function removeFundFromChart(id){
+  state.chartFunds.delete(id);
+  renderChartTray();
+  renderChartPage();
+}
+function renderChartTray(){
+  const tray = document.getElementById('chartTray');
+  if(!tray) return;
+  tray.innerHTML = '';
+  if(state.chartFunds.size===0){ tray.innerHTML = '<div class="tray-empty">Aucun fonds sur le graphique pour l\'instant.</div>'; return; }
+  [...state.chartFunds].forEach(id=>{
+    const a = ASSETS.find(x=>x.id===id);
+    if(!a) return;
+    const chip = document.createElement('div');
+    chip.className = 'tray-chip';
+    chip.innerHTML = `<span>${a.name}</span><button>×</button>`;
+    chip.querySelector('button').onclick = ()=> removeFundFromChart(id);
+    tray.appendChild(chip);
+  });
+}
+async function renderChartPage(){
+  const wrap = document.getElementById('chartWrap');
+  if(!wrap) return;
+  const ids = [...state.chartFunds];
+  if(ids.length===0){ wrap.innerHTML = '<div class="placeholder">Ajoutez au moins un fonds ci-dessus pour afficher son cours.</div>'; return; }
+
+  wrap.innerHTML = '<div class="note">Chargement des historiques de cours…</div>';
+  const range = document.getElementById('chartRange').value;
+  const interval = document.getElementById('chartInterval').value;
+  const normalize = document.getElementById('chartNormalize').checked;
+  const base = currentBackendBase();
+
+  const seriesList = [];
+  for(const id of ids){
+    const a = ASSETS.find(x=>x.id===id);
+    if(!a) continue;
+    try{
+      const params = a.yahooSymbol ? `symbol=${encodeURIComponent(a.yahooSymbol)}` : `isin=${encodeURIComponent(a.isin)}`;
+      const res = await fetch(`${base}/api/history?${params}&range=${range}&interval=${interval}`);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      if(data.error || !data.closes || data.closes.length===0) throw new Error(data.error || 'aucune donnée disponible');
+      seriesList.push({id, name:a.name, currency:a.price_currency||'EUR', dates:data.dates, closes:data.closes, error:null});
+    }catch(err){
+      seriesList.push({id, name:a.name, dates:[], closes:[], error: err.message});
+    }
+  }
+
+  const ok = seriesList.filter(s=>!s.error);
+  const failed = seriesList.filter(s=>s.error);
+
+  if(ok.length===0){
+    wrap.innerHTML = `<div class="placeholder">Aucune donnée récupérée. ${failed.map(f=>`${f.name} : ${f.error}`).join(' · ')}<br>Vérifiez que le backend répond (voir le champ Backend dans l'onglet Explorer).</div>`;
+    return;
+  }
+  if(typeof Chart === 'undefined'){
+    wrap.innerHTML = '<div class="placeholder">Graphique indisponible pour le moment (bibliothèque de graphiques bloquée par le réseau ou un bloqueur de contenu).</div>';
+    return;
+  }
+
+  const longest = ok.reduce((best,s)=> s.dates.length>best.dates.length ? s : best, ok[0]);
+  const labels = longest.dates;
+  const colors = ['#2fd7b3','#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c'];
+
+  const datasets = ok.map((s,i)=>{
+    let values = s.closes;
+    if(normalize && values.length){
+      const base0 = values.find(v=>v!=null && v!==0) || values[0];
+      values = values.map(v=> base0 ? (v/base0*100) : v);
+    }
+    const points = s.dates.map((d,idx)=>({x:d, y:values[idx]}));
+    return { label:s.name, data:points, borderColor:colors[i%colors.length], backgroundColor:colors[i%colors.length], pointRadius:0, borderWidth:2, tension:0.15 };
+  });
+
+  wrap.innerHTML = '<canvas id="priceChartCanvas" height="115"></canvas>' +
+    (failed.length ? `<div class="note" style="margin-top:8px;color:var(--rose);">Non chargé : ${failed.map(f=>f.name+' ('+f.error+')').join(', ')}.</div>` : '') +
+    '<div class="note" style="margin-top:8px;">Les dates de cotation peuvent différer légèrement d\'un fonds à l\'autre selon leur place boursière.</div>';
+
+  const ctx = document.getElementById('priceChartCanvas');
+  if(priceChart) priceChart.destroy();
+  try{
+    priceChart = new Chart(ctx, {
+      type:'line',
+      data:{ labels, datasets },
+      options:{
+        responsive:true,
+        interaction:{mode:'nearest', axis:'x', intersect:false},
+        plugins:{
+          legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
+          tooltip:{callbacks:{label:(c)=> `${c.dataset.label}: ${c.parsed.y.toFixed(2)}${normalize?' (base 100)':''}`}}
+        },
+        scales:{
+          x:{type:'category', grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
+          y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}}, title:{display:true, text: normalize?'Base 100':'Cours', color:'#5c6675'}}
+        }
+      }
+    });
+  }catch(err){
+    wrap.innerHTML += '<div class="placeholder">Erreur d\'affichage du graphique.</div>';
+    console.warn(err);
+  }
+}
+
+/* =====================================================================
    10. INIT
    ===================================================================== */
 initFilters();
 renderTable();       // le tableau et les filtres ne dépendent pas de Chart.js : on les affiche tout de suite
 renderObjectives();
 initFilterCollapse();
+renderChartSelect();
+renderChartTray();
 
 (async () => {
   const chartsOk = await window.chartReadyPromise; // attend le chargement de Chart.js (avec repli multi-CDN)

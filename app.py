@@ -47,6 +47,7 @@ from typing import Optional
 
 import requests
 import yfinance as yf
+import pandas as pd
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -123,30 +124,133 @@ def resolve_symbol(isin: str) -> Optional[str]:
     return None
 
 
-def compute_metrics(symbol: str) -> dict:
-    """Télécharge l'historique hebdomadaire sur 3 ans via yfinance et
-    calcule un rendement et une volatilité annualisés à partir des
-    rendements logarithmiques hebdomadaires — méthode identique à celle
-    utilisée côté frontend pour rester cohérent."""
-    hist = yf.Ticker(symbol).history(period="3y", interval="1wk", auto_adjust=True)
+def compute_full_metrics(symbol: str) -> dict:
+    """Calcule, à partir d'un seul téléchargement d'historique (5 ans,
+    hebdomadaire) :
+      - rendement et volatilité annualisés sur 1 an, 3 ans et 5 ans
+        (rendements logarithmiques hebdomadaires, comme avant)
+      - le dernier cours de clôture connu et sa date
+      - une détection best-effort de la politique de distribution,
+        basée sur l'historique réel des dividendes versés (voir
+        `detect_distribution_policy` ci-dessous)
+    """
+    tkr = yf.Ticker(symbol)
+    hist = tkr.history(period="5y", interval="1wk", auto_adjust=True)
     if hist.empty:
         raise ValueError(f"aucun historique renvoyé par Yahoo Finance pour {symbol}")
     closes = hist["Close"].dropna()
-    if len(closes) < 30:
+    if len(closes) < 15:
         raise ValueError(f"historique insuffisant pour {symbol} ({len(closes)} points)")
 
-    log_returns = closes.pct_change().dropna().apply(lambda x: math.log1p(x))
-    mean_w = float(log_returns.mean())
-    var_w = float(log_returns.var())
+    def annualized(sub) -> tuple[Optional[float], Optional[float]]:
+        if len(sub) < 8:
+            return None, None
+        log_rets = sub.pct_change().dropna().apply(lambda x: math.log1p(x))
+        if log_rets.empty:
+            return None, None
+        mean_w = float(log_rets.mean())
+        var_w = float(log_rets.var())
+        ann_ret = (math.exp(mean_w * 52) - 1) * 100
+        ann_vol = math.sqrt(max(var_w, 0.0) * 52) * 100
+        return round(ann_ret, 2), round(ann_vol, 2)
 
-    annual_return = (math.exp(mean_w * 52) - 1) * 100
-    annual_vol = math.sqrt(max(var_w, 0.0) * 52) * 100
+    last_date = closes.index[-1]
+    out: dict = {"points": int(len(closes))}
+    for label, years in (("1y", 1), ("3y", 3), ("5y", 5)):
+        cutoff = last_date - pd.Timedelta(days=int(years * 365.25))
+        sub = closes[closes.index >= cutoff]
+        r, v = annualized(sub)
+        out[f"ret_{label}"] = r
+        out[f"vol_{label}"] = v
+    # Alias par défaut (rétro-compatibilité avec le reste de l'app) : 3 ans.
+    out["ret"] = out["ret_3y"]
+    out["vol"] = out["vol_3y"]
 
-    return {
-        "ret": round(annual_return, 2),
-        "vol": round(annual_vol, 2),
-        "points": int(len(closes)),
-    }
+    # Dernier cours réel (non ajusté des dividendes) sur les derniers jours.
+    try:
+        daily = tkr.history(period="5d", interval="1d", auto_adjust=False)
+        daily_closes = daily["Close"].dropna()
+        if not daily_closes.empty:
+            out["last_price"] = round(float(daily_closes.iloc[-1]), 4)
+            out["last_price_date"] = daily_closes.index[-1].strftime("%Y-%m-%d")
+        else:
+            out["last_price"] = round(float(closes.iloc[-1]), 4)
+            out["last_price_date"] = last_date.strftime("%Y-%m-%d")
+    except Exception:
+        out["last_price"] = round(float(closes.iloc[-1]), 4)
+        out["last_price_date"] = last_date.strftime("%Y-%m-%d")
+
+    dist_policy, dist_basis = detect_distribution_policy(tkr, symbol)
+    out["dist_policy"] = dist_policy
+    out["dist_basis"] = dist_basis
+    return out
+
+
+def _name_hint(tkr: "yf.Ticker", symbol: str) -> Optional[str]:
+    """Cherche 'Acc'/'Dist' (ou variantes) dans le nom du fonds ou son
+    ticker — convention quasi systématique chez les émetteurs UCITS."""
+    text = symbol.upper()
+    try:
+        info = tkr.info or {}
+        text += " " + str(info.get("longName") or "") .upper()
+        text += " " + str(info.get("shortName") or "").upper()
+    except Exception:
+        pass
+    acc_markers = (" ACC", "(ACC)", "-ACC", "ACCUM", " CAP ", "(C)")
+    dist_markers = (" DIST", "(DIST)", "-DIST", "DISTRIB", "(D)")
+    if any(m in text for m in dist_markers):
+        return "Distribuant"
+    if any(m in text for m in acc_markers):
+        return "Capitalisant"
+    return None
+
+
+def detect_distribution_policy(tkr: "yf.Ticker", symbol: str) -> tuple[str, str]:
+    """Déduit (sans garantie) si un fonds est capitalisant ou distribuant en
+    croisant deux indices indépendants :
+      1. le nom/ticker du fonds, qui contient presque toujours une mention
+         "Acc"/"Dist" (convention standard des émetteurs UCITS) ;
+      2. l'historique réel des dividendes versés (un fonds capitalisant n'en
+         verse jamais, un distribuant en verse périodiquement).
+    Limite connue : un fonds distribuant très récemment lancé peut n'avoir
+    versé aucun dividende et sembler "capitalisant" à tort si son nom ne
+    donne pas d'indice non plus — la donnée reste une indication, pas une
+    certitude absolue à traiter comme telle."""
+    name_hint = _name_hint(tkr, symbol)
+
+    try:
+        divs = tkr.dividends
+    except Exception:
+        divs = None
+
+    div_hint = None
+    div_detail = ""
+    if divs is not None and len(divs) > 0:
+        try:
+            last_div_date = divs.index[-1]
+            now = pd.Timestamp.now(tz=last_div_date.tz) if last_div_date.tzinfo else pd.Timestamp.now()
+            days_since = (now - last_div_date).days
+        except Exception:
+            days_since = 0
+        if days_since < 800:
+            div_hint = "Distribuant"
+            div_detail = f"dernier dividende versé le {last_div_date.strftime('%Y-%m-%d')}"
+        else:
+            div_hint = "Distribuant (ancien)"
+            div_detail = f"dividendes versés par le passé (dernier le {last_div_date.strftime('%Y-%m-%d')}) — vérifiez si la politique a changé"
+    else:
+        div_hint = "Capitalisant"
+        div_detail = "aucun dividende versé dans l'historique disponible"
+
+    div_hint_simple = "Distribuant" if div_hint.startswith("Distribuant") else "Capitalisant"
+
+    if name_hint and name_hint == div_hint_simple:
+        return name_hint, f"nom du fonds ET historique de dividendes concordants ({div_detail})"
+    if name_hint and name_hint != div_hint_simple:
+        return f"{name_hint} (signaux contradictoires)", f"le nom suggère {name_hint} mais {div_detail} — à vérifier sur la fiche DIC"
+    if div_hint:
+        return div_hint, div_detail
+    return "Indéterminé", "aucun indice exploitable (ni nom, ni historique de dividendes)"
 
 
 def fetch_one(isin: str) -> dict:
@@ -163,7 +267,7 @@ def fetch_one(isin: str) -> dict:
         return result
 
     try:
-        metrics = compute_metrics(symbol)
+        metrics = compute_full_metrics(symbol)
         result = {"isin": isin, "symbol": symbol, "error": None, **metrics}
     except Exception as exc:
         result = {"isin": isin, "symbol": symbol, "ret": None, "vol": None,
@@ -241,19 +345,54 @@ def metrics_by_symbol(symbol: str):
     if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
         return cached[1]
     try:
-        info = {}
-        try:
-            info = yf.Ticker(symbol).fast_info
-        except Exception:
-            pass
-        metrics = compute_metrics(symbol)
+        metrics = compute_full_metrics(symbol)
         currency = None
         try:
-            currency = info.get("currency") if hasattr(info, "get") else getattr(info, "currency", None)
+            fi = yf.Ticker(symbol).fast_info
+            currency = fi.get("currency") if hasattr(fi, "get") else getattr(fi, "currency", None)
         except Exception:
             currency = None
         result = {"symbol": symbol, "currency": currency, "error": None, **metrics}
     except Exception as exc:
         result = {"symbol": symbol, "error": str(exc)}
+    _cache[cache_key] = (now, result)
+    return result
+
+
+@app.get("/api/history")
+def get_history(symbol: str = None, isin: str = None, range: str = "3y", interval: str = "1wk"):
+    """Historique de cours complet pour un fonds — utilisé pour le
+    graphique de prix dans le temps (clic sur un nom de fonds), avec
+    superposition possible de plusieurs fonds côté frontend. Accepte soit
+    un ticker Yahoo direct (`symbol`), soit un ISIN à résoudre (`isin`)."""
+    if not symbol and isin:
+        symbol = resolve_symbol(isin)
+    if not symbol:
+        return {"symbol": None, "dates": [], "closes": [], "error": "aucun symbole fourni ou résolu"}
+
+    allowed_ranges = {"1y", "3y", "5y", "10y", "max"}
+    allowed_intervals = {"1d", "1wk", "1mo"}
+    if range not in allowed_ranges:
+        range = "3y"
+    if interval not in allowed_intervals:
+        interval = "1wk"
+    cache_key = f"history:{symbol}:{range}:{interval}"
+    now = time.time()
+    cached = _cache.get(cache_key)
+    if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
+        return cached[1]
+    try:
+        hist = yf.Ticker(symbol).history(period=range, interval=interval, auto_adjust=True)
+        closes = hist["Close"].dropna()
+        if closes.empty:
+            raise ValueError("aucun historique disponible")
+        result = {
+            "symbol": symbol,
+            "dates": [d.strftime("%Y-%m-%d") for d in closes.index],
+            "closes": [round(float(c), 4) for c in closes.values],
+            "error": None,
+        }
+    except Exception as exc:
+        result = {"symbol": symbol, "dates": [], "closes": [], "error": str(exc)}
     _cache[cache_key] = (now, result)
     return result
