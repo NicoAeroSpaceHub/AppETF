@@ -431,7 +431,7 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
           <option value="1mo">Mensuel</option>
         </select>
         <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);">
-          <input type="checkbox" class="chk" id="chartNormalize" checked onchange="renderChartPage()"> Base 100 (comparer les évolutions)
+          <input type="checkbox" class="chk" id="chartNormalize" checked onchange="renderChartPage()"> Variation en % depuis le début (0% = départ)
         </label>
       </div>
       <div class="range-row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
@@ -512,10 +512,18 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
     <div class="panel" id="portfolioHistoryPanel" style="display:none;">
       <div class="panel-title">Historique du portefeuille optimal (simulation)</div>
       <div class="note" style="margin-bottom:10px;">Simulation « buy-and-hold » : les fonds sont achetés une seule fois selon les pourcentages optimaux ci-dessus, sans réajustement ultérieur des poids. La période affichée commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible (le fonds le plus récent limite le point de départ).</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-bottom:10px;">
+        <input type="checkbox" class="chk" id="portfolioShowComponents" onchange="renderPortfolioHistoryChart()"> Superposer les fonds individuels qui composent le portefeuille
+      </label>
       <div id="portfolioHistoryWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir la simulation.</div></div>
+      <div class="results-grid" id="portfolioExtraStats" style="display:none;margin-top:14px;">
+        <div class="metric-card"><div class="label">Perte actuelle depuis le plus haut</div><div class="value" style="color:var(--rose);" id="phCurrentDD">—</div></div>
+        <div class="metric-card"><div class="label">Meilleure année civile</div><div class="value teal" id="phBestYear">—</div></div>
+        <div class="metric-card"><div class="label">Pire année civile</div><div class="value" style="color:var(--rose);" id="phWorstYear">—</div></div>
+      </div>
       <div class="table-scroll" id="portfolioStatsTableWrap" style="display:none;margin-top:14px;">
         <table>
-          <thead><tr><th>Période</th><th>CAGR</th><th>Volatilité</th><th>Max Drawdown</th><th>Sortino</th></tr></thead>
+          <thead><tr><th>Période</th><th>CAGR</th><th>Volatilité</th><th>Rend./Vol.</th><th>Max Drawdown</th><th>Sortino</th></tr></thead>
           <tbody id="portfolioStatsTableBody"></tbody>
         </table>
       </div>
@@ -660,7 +668,7 @@ const COLUMN_DEFS = [
   {id:'vol_3y',       label:'Volatilité 3 ans',       group:'Risque',         default:true,  sortKey:'vol_3y',  render:a=>fmtPct(a.vol_3y,'vol')},
   {id:'vol_5y',       label:'Volatilité 5 ans',       group:'Risque',         default:false, sortKey:'vol_5y',  render:a=>fmtPct(a.vol_5y,'vol')},
   {id:'vol_max',      label:'Volatilité depuis le début', group:'Risque',     default:false, sortKey:'vol_max', render:a=>fmtPct(a.vol_max,'vol')},
-  {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',  render:a=>`<span class="num">${a.sharpe.toFixed(2)}</span>`},
+  {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',  render:a=>a.sharpe!=null?`<span class="num">${a.sharpe.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_1y',   label:'Sortino 1 an',           group:'Risque',         default:false, sortKey:'sortino_1y', render:a=>a.sortino_1y!=null?`<span class="num">${a.sortino_1y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_3y',   label:'Sortino 3 ans',          group:'Risque',         default:true,  sortKey:'sortino_3y', render:a=>a.sortino_3y!=null?`<span class="num">${a.sortino_3y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_5y',   label:'Sortino 5 ans',          group:'Risque',         default:false, sortKey:'sortino_5y', render:a=>a.sortino_5y!=null?`<span class="num">${a.sortino_5y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
@@ -904,7 +912,7 @@ function renderHero(){
   document.getElementById('heroCount').textContent = ASSETS.length + ' ETF';
   const ctx = document.getElementById('heroScatter');
   const byCat = {};
-  ASSETS.forEach(a=>{ (byCat[a.category] = byCat[a.category]||[]).push(a); });
+  ASSETS.filter(a=>a.ret!=null && a.vol!=null).forEach(a=>{ (byCat[a.category] = byCat[a.category]||[]).push(a); });
   const datasets = Object.keys(byCat).map(cat=>({
     label: cat,
     data: byCat[cat].map(a=>({x:a.vol, y:a.ret, label:a.name})),
@@ -1343,7 +1351,7 @@ async function selectFundCandidate(item){
   // libellé de distribution contient des guillemets/apostrophes.
   pendingFundPayload = {
     symbol: item.symbol,
-    ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15,
+    ret: okMetrics?metrics.ret:null, vol: okMetrics?metrics.vol:null,
     ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
     ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
     ret_max: okMetrics?metrics.ret_max:null, vol_max: okMetrics?metrics.vol_max:null,
@@ -1389,11 +1397,11 @@ async function selectFundCandidate(item){
     </div>
     <div class="filter-group">
       <label class="filter-label">TER annuel ${terFound ? '<span style="color:var(--teal);">— détecté automatiquement via Yahoo Finance</span>' : '<span style="color:var(--text-faint);">— non trouvé via Yahoo (fréquent pour les ETF UCITS), estimation par défaut, à corriger</span>'}</label>
-      <input class="search-input" id="newFundTer" type="number" step="0.01" min="0" value="${terFound ? metrics.ter.toFixed(2) : 0.25}">
+      <input class="search-input" id="newFundTer" type="number" step="0.01" min="0" placeholder="non trouvé — laissez vide si inconnu" value="${terFound ? metrics.ter.toFixed(2) : ''}">
     </div>
     <div class="filter-group">
       <label class="filter-label">Encours (millions €) ${sizeFound ? '<span style="color:var(--teal);">— détecté automatiquement via Yahoo Finance</span>' : '<span style="color:var(--text-faint);">— non trouvé via Yahoo, estimation par défaut, à corriger</span>'}</label>
-      <input class="search-input" id="newFundSize" type="number" step="10" min="0" value="${sizeFound ? metrics.fund_size_million : 100}">
+      <input class="search-input" id="newFundSize" type="number" step="10" min="0" placeholder="non trouvé — laissez vide si inconnu" value="${sizeFound ? metrics.fund_size_million : ''}">
     </div>
     <div class="note" style="margin-bottom:10px;">Éligibilité PEA et disponibilité sur Trade Republic : non vérifiées automatiquement — confirmez-les vous-même avant d'investir.</div>
     <button class="run-btn" onclick="confirmAddFund()">Ajouter à mon univers d'ETF</button>
@@ -1410,14 +1418,16 @@ function confirmAddFund(){
     category = document.getElementById('newFundCatCustom').value.trim() || 'Autre';
   }
   const dist = document.querySelector('[data-dist].active') ? document.querySelector('[data-dist].active').getAttribute('data-dist') : 'Capitalisant';
-  const ter = parseFloat(document.getElementById('newFundTer').value) || 0.25;
-  const fundSize = parseFloat(document.getElementById('newFundSize').value) || 100;
+  const terRaw = document.getElementById('newFundTer').value.trim();
+  const sizeRaw = document.getElementById('newFundSize').value.trim();
+  const ter = terRaw === '' ? null : parseFloat(terRaw);
+  const fundSize = sizeRaw === '' ? null : parseFloat(sizeRaw);
 
   const newAsset = {
     id: 'custom-' + payload.symbol.replace(/[^a-zA-Z0-9]/g,'') + '-' + Date.now(),
     name, isin, category, index: name, ter, fundSize,
-    ret: payload.ret, vol: Math.max(payload.vol, 0.05),
-    ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret, vol_3y: Math.max(payload.vol,0.05),
+    ret: payload.ret, vol: payload.vol!=null ? Math.max(payload.vol, 0.05) : null,
+    ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret, vol_3y: payload.vol!=null ? Math.max(payload.vol,0.05) : null,
     ret_5y: payload.ret_5y, vol_5y: payload.vol_5y,
     ret_max: payload.ret_max, vol_max: payload.vol_max,
     sortino_1y: payload.sortino_1y, sortino_3y: payload.sortino_3y, sortino_5y: payload.sortino_5y, sortino_max: payload.sortino_max,
@@ -1429,7 +1439,7 @@ function confirmAddFund(){
     region: {}, currency:'EUR', dist, custom:true,
     liveData: payload.live === true, yahooSymbol: payload.symbol, liveAt: payload.live === true ? new Date() : null, lastError:null,
   };
-  newAsset.sharpe = newAsset.ret/Math.max(newAsset.vol,0.05);
+  newAsset.sharpe = (newAsset.ret!=null && newAsset.vol!=null) ? newAsset.ret/Math.max(newAsset.vol,0.05) : null;
   ASSETS.push(newAsset);
   saveCustomETFs();
   refreshCategoriesUI();
@@ -1469,18 +1479,25 @@ function resetResults(){
   document.getElementById('frontierPanel').style.display='none';
   document.getElementById('portfolioHistoryPanel').style.display='none';
   document.getElementById('optNote').textContent='';
+  portfolioSimData = null;
 }
 
 function runOptimization(){
-  const list = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
+  const requested = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
+  const list = requested.filter(a=>a.ret!=null && a.vol!=null);
+  const excluded = requested.filter(a=>a.ret==null || a.vol==null);
   const note = document.getElementById('optNote');
   if(list.length < 2){
-    note.textContent = "Sélectionnez au moins 2 ETF dans le tableau pour lancer l'optimisation.";
+    note.textContent = excluded.length
+      ? `Pas assez d'ETF avec des données réelles : ${excluded.map(a=>a.name).join(', ')} n'ont pas de rendement/volatilité connus (Yahoo Finance n'a pas encore été interrogé avec succès pour ${excluded.length>1?'eux':'lui'}). Actualisez-les ou sélectionnez d'autres fonds.`
+      : "Sélectionnez au moins 2 ETF dans le tableau pour lancer l'optimisation.";
     note.style.color = 'var(--rose)';
     return;
   }
-  note.style.color = 'var(--text-faint)';
-  note.textContent = 'Optimisation en cours…';
+  note.style.color = excluded.length ? 'var(--amber)' : 'var(--text-faint)';
+  note.textContent = excluded.length
+    ? `Optimisation en cours… (${excluded.map(a=>a.name).join(', ')} exclu${excluded.length>1?'s':''} : pas de données réelles disponibles)`
+    : 'Optimisation en cours…';
   document.getElementById('runBtn').disabled = true;
 
   setTimeout(()=>{
@@ -1499,7 +1516,7 @@ function runOptimization(){
     renderPortfolioHistory(list, w);
 
     note.style.color = 'var(--text-dim)';
-    note.textContent = `Convergence CMA-ES obtenue sur ${list.length} actifs (100 générations).`;
+    note.textContent = `Convergence CMA-ES obtenue sur ${list.length} actifs (100 générations).` + (excluded.length ? ` (${excluded.map(a=>a.name).join(', ')} exclu${excluded.length>1?'s':''} du calcul : pas de données réelles.)` : '');
     document.getElementById('runBtn').disabled = false;
   }, 30);
 }
@@ -1627,11 +1644,39 @@ function maxDrawdownFromSeries(values){
 }
 
 let portfolioHistoryChart;
+let portfolioSimData = null; // conserve les données calculées pour permettre de redessiner le graphique sans tout re-télécharger (superposition des fonds)
+
+function bestWorstCalendarYears(dates, values){
+  const byYear = {};
+  dates.forEach((d,i)=>{
+    const y = d.slice(0,4);
+    if(values[i]==null) return;
+    if(!byYear[y]) byYear[y] = {first:values[i], last:values[i]};
+    byYear[y].last = values[i];
+  });
+  const yearReturns = Object.keys(byYear).map(y=>{
+    const {first,last} = byYear[y];
+    return {year:y, ret: first>0 ? (last/first-1)*100 : null};
+  }).filter(y=>y.ret!=null);
+  if(yearReturns.length===0) return {best:null, worst:null};
+  const best = yearReturns.reduce((a,b)=> b.ret>a.ret?b:a);
+  const worst = yearReturns.reduce((a,b)=> b.ret<a.ret?b:a);
+  return {best, worst};
+}
+function currentDrawdown(values){
+  let peak = -Infinity;
+  for(const v of values){ if(v!=null && v>peak) peak = v; }
+  const last = [...values].reverse().find(v=>v!=null);
+  if(peak<=0 || last==null) return null;
+  return (last/peak - 1)*100;
+}
+
 async function renderPortfolioHistory(list, weights){
   const panel = document.getElementById('portfolioHistoryPanel');
   const wrap = document.getElementById('portfolioHistoryWrap');
   panel.style.display = 'block';
   document.getElementById('portfolioStatsTableWrap').style.display = 'none';
+  document.getElementById('portfolioExtraStats').style.display = 'none';
   wrap.innerHTML = '<div class="note">Récupération des historiques de cours pour la simulation…</div>';
 
   const base = currentBackendBase();
@@ -1681,16 +1726,19 @@ async function renderPortfolioHistory(list, weights){
     });
   });
 
-  // Valeur du portefeuille (buy-and-hold) = somme pondérée des valeurs normalisées, base 100.
-  const portfolioValues = masterDates.map((d,i)=>{
+  // Valeur du portefeuille (buy-and-hold) = somme pondérée des valeurs normalisées, exprimée en % de variation depuis le point de départ commun.
+  const portfolioRatio = masterDates.map((d,i)=>{
     let sum = 0, anyNull=false;
     for(let k=0;k<normSeries.length;k++){
       const v = normSeries[k][i];
       if(v==null){ anyNull=true; break; }
       sum += weights[k]*v;
     }
-    return anyNull ? null : sum*100;
+    return anyNull ? null : sum;
   });
+  const portfolioValues = portfolioRatio.map(v => v!=null ? (v-1)*100 : null);
+
+  portfolioSimData = { masterDates, portfolioValues, normSeries, names: ok.map(s=>s.name) };
 
   const statsWrap = document.getElementById('portfolioStatsTableWrap');
   const statsBody = document.getElementById('portfolioStatsTableBody');
@@ -1713,41 +1761,81 @@ async function renderPortfolioHistory(list, weights){
       subValues = portfolioValues.slice(startIdx);
       if(subDates.length < 8) return;
     }
-    const c = cagrFromSeries(subDates, subValues);
-    const {vol, sortino} = volAndSortinoFromSeries(subValues, 52);
-    const dd = maxDrawdownFromSeries(subValues);
-    rows.push({label:w.label, c, vol, dd, sortino});
+    // Les fonctions de stats travaillent sur des valeurs de type "prix" (base
+    // arbitraire) : on repart de la valeur en % pour reconstruire une base 100
+    // localement, sans changer les rendements/volatilités calculés.
+    const rebased = subValues.map(v=> v!=null ? 100*(1+v/100) : null);
+    const c = cagrFromSeries(subDates, rebased);
+    const {vol, sortino} = volAndSortinoFromSeries(rebased, 52);
+    const dd = maxDrawdownFromSeries(rebased);
+    const sharpeLike = (c!=null && vol!=null && vol>1e-6) ? c/vol : null;
+    rows.push({label:w.label, c, vol, dd, sortino, sharpeLike});
   });
   statsBody.innerHTML = rows.map(r=>`
     <tr>
       <td>${r.label}</td>
       <td class="${r.c!=null && r.c>=0 ? 'num-pos':'num'}">${r.c!=null?r.c.toFixed(1)+'%':'—'}</td>
       <td class="num-vol">${r.vol!=null?r.vol.toFixed(1)+'%':'—'}</td>
+      <td class="num">${r.sharpeLike!=null?r.sharpeLike.toFixed(2):'—'}</td>
       <td class="num-vol">${r.dd!=null?r.dd.toFixed(1)+'%':'—'}</td>
       <td class="num">${r.sortino!=null?r.sortino.toFixed(2):'—'}</td>
     </tr>`).join('');
   statsWrap.style.display = 'block';
+
+  // Statistiques complémentaires : perte actuelle depuis le plus haut, meilleure/pire année civile.
+  const rebasedFull = portfolioValues.map(v=> v!=null ? 100*(1+v/100) : null);
+  const curDD = currentDrawdown(rebasedFull);
+  const {best, worst} = bestWorstCalendarYears(masterDates, rebasedFull);
+  document.getElementById('phCurrentDD').textContent = curDD!=null ? curDD.toFixed(1)+'%' : '—';
+  document.getElementById('phBestYear').textContent = best ? `${best.year} (${best.ret>=0?'+':''}${best.ret.toFixed(1)}%)` : '—';
+  document.getElementById('phWorstYear').textContent = worst ? `${worst.year} (${worst.ret>=0?'+':''}${worst.ret.toFixed(1)}%)` : '—';
+  document.getElementById('portfolioExtraStats').style.display = 'grid';
+
+  renderPortfolioHistoryChart();
+}
+
+function renderPortfolioHistoryChart(){
+  const wrap = document.getElementById('portfolioHistoryWrap');
+  if(!portfolioSimData){ wrap.innerHTML = '<div class="placeholder">Lancez l\'optimisation ci-dessus pour voir la simulation.</div>'; return; }
+  const {masterDates, portfolioValues, normSeries, names} = portfolioSimData;
+  const showComponents = document.getElementById('portfolioShowComponents').checked;
 
   if(typeof Chart === 'undefined'){
     wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les statistiques ci-dessus restent valables.</div>';
     return;
   }
   wrap.innerHTML = `<div class="chart-box tall"><canvas id="portfolioHistoryCanvas"></canvas></div>
-    <div class="note" style="margin-top:8px;">Portefeuille simulé du ${masterDates[0]} à ${masterDates[masterDates.length-1]} avec les pondérations optimales ci-dessus, valeur en base 100. Aucun rééquilibrage périodique n'est appliqué (achat unique au départ).</div>`;
+    <div class="note" style="margin-top:8px;">Portefeuille simulé du ${masterDates[0]} à ${masterDates[masterDates.length-1]} avec les pondérations optimales ci-dessus, en variation % depuis le point de départ commun. Aucun rééquilibrage périodique n'est appliqué (achat unique au départ).</div>`;
+
+  const colors = ['#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c','#8993a4'];
+  const datasets = [{
+    label:'Portefeuille optimal', data: masterDates.map((d,i)=>({x:d,y:portfolioValues[i]})),
+    borderColor:'#2fd7b3', backgroundColor:'rgba(47,215,179,0.12)', pointRadius:0, borderWidth:2.5, fill: !showComponents, tension:0.1, spanGaps:true, order:0,
+  }];
+  if(showComponents){
+    normSeries.forEach((series,k)=>{
+      const pctSeries = series.map(v=> v!=null ? (v-1)*100 : null);
+      datasets.push({
+        label:names[k], data: masterDates.map((d,i)=>({x:d,y:pctSeries[i]})),
+        borderColor:colors[k%colors.length], backgroundColor:'transparent', pointRadius:0, borderWidth:1.5, borderDash:[4,3], tension:0.1, spanGaps:true, order:1,
+      });
+    });
+  }
+
   const ctx = document.getElementById('portfolioHistoryCanvas');
   if(portfolioHistoryChart) portfolioHistoryChart.destroy();
   portfolioHistoryChart = new Chart(ctx, {
     type:'line',
-    data:{
-      labels: masterDates,
-      datasets:[{ label:'Portefeuille optimal (base 100)', data: masterDates.map((d,i)=>({x:d,y:portfolioValues[i]})), borderColor:'#2fd7b3', backgroundColor:'rgba(47,215,179,0.12)', pointRadius:0, borderWidth:2, fill:true, tension:0.1, spanGaps:true }]
-    },
+    data:{ labels: masterDates, datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=>`${c.parsed.y!=null?c.parsed.y.toFixed(1):'—'} (base 100)`}} },
+      plugins:{
+        legend:{display: showComponents, position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}},
+        tooltip:{callbacks:{label:(c)=> `${c.dataset.label}: ${c.parsed.y!=null?(c.parsed.y>=0?'+':'')+c.parsed.y.toFixed(1)+'%':'—'}`}}
+      },
       scales:{
         x:{type:'category', grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
-        y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}}, title:{display:true, text:'Valeur (base 100)', color:'#5c6675'}}
+        y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=>(v>=0?'+':'')+v+'%'}, title:{display:true, text:'Variation depuis le début (%)', color:'#5c6675'}}
       }
     }
   });
@@ -1907,7 +1995,7 @@ async function renderChartPage(){
     let values = s.closes;
     if(normalize && values.length){
       const base0 = values.find(v=>v!=null && v!==0) || values[0];
-      values = values.map(v=> (v!=null && base0) ? (v/base0*100) : null);
+      values = values.map(v=> (v!=null && base0) ? ((v/base0 - 1)*100) : null);
     }
     const points = s.dates.map((d,idx)=>({x:d, y:values[idx]}));
     const unit = (!normalize && s.rawCurrency && s.rawCurrency!=='EUR' && !s.convertedToEur) ? ` (${s.rawCurrency}, non converti)` : '';
@@ -1916,7 +2004,7 @@ async function renderChartPage(){
 
   wrap.innerHTML = '<div class="chart-box tall"><canvas id="priceChartCanvas"></canvas></div>' +
     (failed.length ? `<div class="note" style="margin-top:8px;color:var(--rose);">Non chargé : ${failed.map(f=>f.name+' ('+f.error+')').join(', ')}.</div>` : '') +
-    (unconverted.length ? `<div class="note" style="margin-top:8px;color:var(--amber);">Conversion en euro indisponible pour ${unconverted.map(s=>s.name).join(', ')} — affiché dans sa devise native, non comparable directement aux autres courbes en unité brute (activez « Base 100 » pour comparer les évolutions malgré tout).</div>` : '') +
+    (unconverted.length ? `<div class="note" style="margin-top:8px;color:var(--amber);">Conversion en euro indisponible pour ${unconverted.map(s=>s.name).join(', ')} — affiché dans sa devise native, non comparable directement aux autres courbes en unité brute (activez « Variation en % » pour comparer les évolutions malgré tout).</div>` : '') +
     '<div class="note" style="margin-top:8px;">Toutes les valeurs sont en euro (conversion automatique via les taux de change Yahoo Finance si nécessaire). Les dates de cotation peuvent différer légèrement d\'un fonds à l\'autre selon leur place boursière.</div>';
 
   const ctx = document.getElementById('priceChartCanvas');
@@ -1931,11 +2019,15 @@ async function renderChartPage(){
         interaction:{mode:'nearest', axis:'x', intersect:false},
         plugins:{
           legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10.5}}},
-          tooltip:{callbacks:{label:(c)=> `${c.dataset.label}: ${c.parsed.y!=null?c.parsed.y.toFixed(2):'—'}${normalize?' (base 100)':' €'}`}}
+          tooltip:{callbacks:{label:(c)=> {
+            if(c.parsed.y==null) return `${c.dataset.label}: —`;
+            if(normalize) return `${c.dataset.label}: ${c.parsed.y>=0?'+':''}${c.parsed.y.toFixed(1)}%`;
+            return `${c.dataset.label}: ${c.parsed.y.toFixed(2)} €`;
+          }}}
         },
         scales:{
           x:{type:'category', grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
-          y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}}, title:{display:true, text: normalize?'Base 100':'Cours (€)', color:'#5c6675'}}
+          y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=> normalize ? (v>=0?'+':'')+v+'%' : v}, title:{display:true, text: normalize?'Variation depuis le début (%)':'Cours (€)', color:'#5c6675'}}
         }
       }
     });

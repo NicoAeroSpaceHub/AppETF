@@ -235,22 +235,29 @@ def fetch_fund_info(tkr: "yf.Ticker") -> dict:
     ter = None
     for key in ("annualReportExpenseRatio", "expenseRatio", "netExpenseRatio", "totalExpenseRatio"):
         val = info.get(key)
-        if val is not None:
-            try:
-                val = float(val)
-                # Yahoo renvoie généralement une fraction (0.002 = 0.20%).
-                # Hypothèse non garantie à 100% en l'absence de doc officielle :
-                # on suppose une fraction si < 1, un pourcentage direct sinon.
-                ter = round(val * 100, 3) if val < 1 else round(val, 3)
-                break
-            except (TypeError, ValueError):
-                continue
+        if val is None:
+            continue
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            continue
+        # Yahoo renvoie généralement une fraction (0.002 = 0.20%) mais ce
+        # n'est pas garanti pour toutes les clés/tous les émetteurs.
+        pct = val * 100 if val < 1 else val
+        # Un TER réaliste se situe quasi toujours entre 0 et 10% : au-delà,
+        # la valeur est probablement mal formatée par Yahoo. Dans le doute,
+        # on préfère ne rien afficher plutôt qu'un chiffre faux.
+        if 0 <= pct <= 10:
+            ter = round(pct, 3)
+            break
 
     fund_size_million = None
     total_assets = info.get("totalAssets")
     if total_assets is not None:
         try:
-            fund_size_million = round(float(total_assets) / 1_000_000, 1)
+            val = float(total_assets)
+            if val > 0:
+                fund_size_million = round(val / 1_000_000, 1)
         except (TypeError, ValueError):
             fund_size_million = None
 
