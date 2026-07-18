@@ -513,11 +513,11 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       <div class="panel-title">Historique du portefeuille optimal (simulation)</div>
       <div class="note" style="margin-bottom:10px;">Simulation « buy-and-hold » : les fonds sont achetés une seule fois selon les pourcentages optimaux ci-dessus, sans réajustement ultérieur des poids. La période affichée commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible (le fonds le plus récent limite le point de départ).</div>
       <div id="portfolioHistoryWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir la simulation.</div></div>
-      <div class="results-grid" id="portfolioHistoryStats" style="display:none;margin-top:14px;">
-        <div class="metric-card"><div class="label">CAGR depuis le début simulé</div><div class="value teal" id="phCagr">—</div></div>
-        <div class="metric-card"><div class="label">Volatilité annualisée</div><div class="value amber" id="phVol">—</div></div>
-        <div class="metric-card"><div class="label">Max Drawdown</div><div class="value" style="color:var(--rose);" id="phDD">—</div></div>
-        <div class="metric-card"><div class="label">Ratio de Sortino</div><div class="value indigo" id="phSortino">—</div></div>
+      <div class="table-scroll" id="portfolioStatsTableWrap" style="display:none;margin-top:14px;">
+        <table>
+          <thead><tr><th>Période</th><th>CAGR</th><th>Volatilité</th><th>Max Drawdown</th><th>Sortino</th></tr></thead>
+          <tbody id="portfolioStatsTableBody"></tbody>
+        </table>
       </div>
     </div>
 
@@ -554,9 +554,9 @@ const ASSETS = [
 ASSETS.forEach(a=>{
   a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05);
   a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; a.custom=false;
-  a.ret_1y=null; a.vol_1y=null; a.ret_3y=a.ret; a.vol_3y=a.vol; a.ret_5y=null; a.vol_5y=null;
-  a.sortino_1y=null; a.sortino_3y=null; a.sortino_5y=null;
-  a.dd_1y=null; a.dd_3y=null; a.dd_5y=null;
+  a.ret_1y=null; a.vol_1y=null; a.ret_3y=a.ret; a.vol_3y=a.vol; a.ret_5y=null; a.vol_5y=null; a.ret_max=null; a.vol_max=null;
+  a.sortino_1y=null; a.sortino_3y=null; a.sortino_5y=null; a.sortino_max=null;
+  a.dd_1y=null; a.dd_3y=null; a.dd_5y=null; a.dd_max=null;
   a.last_price=null; a.last_price_eur=null; a.last_price_date=null; a.price_currency='EUR'; a.nativeCurrency='EUR';
   a.dist_policy=null; a.dist_basis=null; a.quote_type=null;
 });
@@ -596,11 +596,31 @@ refreshCategoriesUI();
 /* =====================================================================
    1bis. COLONNES CONFIGURABLES DU TABLEAU
    ===================================================================== */
+let referenceCloseDate = null;
+function computeReferenceCloseDate(){
+  // La date de clôture "commune" = celle partagée par le plus grand nombre
+  // de fonds ayant un prix — plus robuste qu'un simple maximum si un fonds
+  // isolé a une date aberrante (fuseau horaire, erreur ponctuelle...).
+  const counts = {};
+  ASSETS.forEach(a=>{
+    if(a.last_price!=null && a.last_price_date){
+      counts[a.last_price_date] = (counts[a.last_price_date]||0)+1;
+    }
+  });
+  let best = null, bestCount = 0;
+  Object.keys(counts).forEach(d=>{
+    if(counts[d]>bestCount || (counts[d]===bestCount && (best===null || d>best))){
+      best = d; bestCount = counts[d];
+    }
+  });
+  return best;
+}
 function isFundLive(a){
-  // Dérivé de preuves concrètes (symbole résolu + dernier cours obtenu)
-  // plutôt que d'un simple booléen à maintenir en synchro : évite qu'un
-  // fonds réellement à jour s'affiche par erreur comme "Estimé".
-  return !!(a.yahooSymbol && a.last_price != null && !a.lastError);
+  // "Live" exige : un prix, un symbole résolu, aucune erreur récente, ET
+  // une date de dernière clôture identique à la date de référence commune
+  // à l'ensemble des fonds (sinon la donnée est datée, donc traitée comme
+  // une estimation même si elle provient bien de Yahoo Finance).
+  return !!(a.yahooSymbol && a.last_price != null && !a.lastError && referenceCloseDate && a.last_price_date === referenceCloseDate);
 }
 function fmtPct(v, kind){
   if(v==null || isNaN(v)) return '<span class="num" style="color:var(--text-faint);">—</span>';
@@ -619,8 +639,8 @@ const COLUMN_DEFS = [
   {id:'currency',     label:'Devise',                group:'Identité',       default:false, sortKey:'nativeCurrency', render:a=>`<span class="num">${a.nativeCurrency||a.currency}</span>`},
   {id:'source',       label:'Source',                group:'Identité',       default:true,  sortKey:null,
     render:a=> isFundLive(a)
-      ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Calculé à partir des cours réels Yahoo Finance (${a.yahooSymbol||''}), ${a.liveAt?a.liveAt.toLocaleString('fr-FR'):''}">● Live</span>`
-      : `<span class="cat-badge" title="Estimation indicative${a.lastError?(' — échec de la dernière actualisation : '+a.lastError):''}">○ Estimé</span>`},
+      ? `<span class="cat-badge" style="color:var(--teal);border-color:var(--teal-dim);" title="Cours du ${a.last_price_date} — dernière clôture commune à l'ensemble des fonds actualisés">● Live</span>`
+      : `<span class="cat-badge" title="${a.lastError ? ('Échec de la dernière actualisation : '+a.lastError) : (a.last_price_date && referenceCloseDate ? `Cours du ${a.last_price_date}, antérieur à la dernière clôture commune (${referenceCloseDate}) — actualisez` : 'Estimation indicative, pas encore actualisée depuis Yahoo Finance')}">○ Estimé</span>`},
   {id:'last_price',   label:'Dernier cours',         group:'Cours',          default:true,  sortKey:'last_price',
     render:a=>{
       if(a.last_price==null) return '<span class="num" style="color:var(--text-faint);">—</span>';
@@ -635,16 +655,20 @@ const COLUMN_DEFS = [
   {id:'ret_1y',       label:'Rendement 1 an (CAGR)',  group:'Performance',    default:false, sortKey:'ret_1y',  render:a=>fmtPct(a.ret_1y,'ret')},
   {id:'ret_3y',       label:'Rendement 3 ans (CAGR)', group:'Performance',    default:true,  sortKey:'ret_3y',  render:a=>fmtPct(a.ret_3y,'ret')},
   {id:'ret_5y',       label:'Rendement 5 ans (CAGR)', group:'Performance',    default:false, sortKey:'ret_5y',  render:a=>fmtPct(a.ret_5y,'ret')},
+  {id:'ret_max',      label:'Rendement depuis le début (CAGR)', group:'Performance', default:false, sortKey:'ret_max', render:a=>fmtPct(a.ret_max,'ret')},
   {id:'vol_1y',       label:'Volatilité 1 an',        group:'Risque',         default:false, sortKey:'vol_1y',  render:a=>fmtPct(a.vol_1y,'vol')},
   {id:'vol_3y',       label:'Volatilité 3 ans',       group:'Risque',         default:true,  sortKey:'vol_3y',  render:a=>fmtPct(a.vol_3y,'vol')},
   {id:'vol_5y',       label:'Volatilité 5 ans',       group:'Risque',         default:false, sortKey:'vol_5y',  render:a=>fmtPct(a.vol_5y,'vol')},
+  {id:'vol_max',      label:'Volatilité depuis le début', group:'Risque',     default:false, sortKey:'vol_max', render:a=>fmtPct(a.vol_max,'vol')},
   {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',  render:a=>`<span class="num">${a.sharpe.toFixed(2)}</span>`},
   {id:'sortino_1y',   label:'Sortino 1 an',           group:'Risque',         default:false, sortKey:'sortino_1y', render:a=>a.sortino_1y!=null?`<span class="num">${a.sortino_1y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_3y',   label:'Sortino 3 ans',          group:'Risque',         default:true,  sortKey:'sortino_3y', render:a=>a.sortino_3y!=null?`<span class="num">${a.sortino_3y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_5y',   label:'Sortino 5 ans',          group:'Risque',         default:false, sortKey:'sortino_5y', render:a=>a.sortino_5y!=null?`<span class="num">${a.sortino_5y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
+  {id:'sortino_max',  label:'Sortino depuis le début', group:'Risque',        default:false, sortKey:'sortino_max', render:a=>a.sortino_max!=null?`<span class="num">${a.sortino_max.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'dd_1y',        label:'Max Drawdown 1 an',      group:'Risque',         default:false, sortKey:'dd_1y',   render:a=>a.dd_1y!=null?`<span class="num-vol">${a.dd_1y.toFixed(1)}%</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'dd_3y',        label:'Max Drawdown 3 ans',     group:'Risque',         default:true,  sortKey:'dd_3y',   render:a=>a.dd_3y!=null?`<span class="num-vol">${a.dd_3y.toFixed(1)}%</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'dd_5y',        label:'Max Drawdown 5 ans',     group:'Risque',         default:false, sortKey:'dd_5y',   render:a=>a.dd_5y!=null?`<span class="num-vol">${a.dd_5y.toFixed(1)}%</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
+  {id:'dd_max',       label:'Max Drawdown depuis le début', group:'Risque',  default:true,  sortKey:'dd_max',  render:a=>a.dd_max!=null?`<span class="num-vol">${a.dd_max.toFixed(1)}%</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
 ];
 function loadColumnPrefs(){
   try{
@@ -750,6 +774,7 @@ function sortAssets(list){
 }
 
 function renderTable(){
+  referenceCloseDate = computeReferenceCloseDate();
   const list = sortAssets(filteredAssets());
   const activeCols = COLUMN_DEFS.filter(c=>state.columns.has(c.id));
 
@@ -1212,8 +1237,10 @@ async function refreshFromYahoo(){
         a.ret_1y = r.ret_1y; a.vol_1y = r.vol_1y!=null ? Math.max(r.vol_1y,0.01) : null;
         a.ret_3y = a.ret; a.vol_3y = a.vol;
         a.ret_5y = r.ret_5y; a.vol_5y = r.vol_5y!=null ? Math.max(r.vol_5y,0.01) : null;
-        a.sortino_1y = r.sortino_1y; a.sortino_3y = r.sortino_3y; a.sortino_5y = r.sortino_5y;
-        a.dd_1y = r.dd_1y; a.dd_3y = r.dd_3y; a.dd_5y = r.dd_5y;
+        a.ret_max = r.ret_max; a.vol_max = r.vol_max!=null ? Math.max(r.vol_max,0.01) : null;
+        a.sortino_1y = r.sortino_1y; a.sortino_3y = r.sortino_3y; a.sortino_5y = r.sortino_5y; a.sortino_max = r.sortino_max;
+        a.dd_1y = r.dd_1y; a.dd_3y = r.dd_3y; a.dd_5y = r.dd_5y; a.dd_max = r.dd_max;
+        a.inceptionDate = r.inception_date || a.inceptionDate;
         a.sharpe = a.ret/Math.max(a.vol,0.05);
         a.last_price = r.last_price!=null ? r.last_price : a.last_price;
         a.last_price_eur = r.last_price_eur!=null ? r.last_price_eur : a.last_price_eur;
@@ -1298,11 +1325,18 @@ async function selectFundCandidate(item){
   }
 
   const okMetrics = metrics && !metrics.error && metrics.ret!=null && metrics.vol!=null;
-  const catOptions = CATS.map(c=>`<option value="${c}">${c}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
   const detectedDist = okMetrics && metrics.dist_policy ? metrics.dist_policy : null;
   const preselectCap = !detectedDist || detectedDist.startsWith('Capitalisant');
   const terFound = okMetrics && metrics.ter!=null;
   const sizeFound = okMetrics && metrics.fund_size_million!=null;
+  const categoryHint = okMetrics && metrics.category_hint ? metrics.category_hint : null;
+  // La catégorie Yahoo/Morningstar est une chaîne libre (ex. "Europe Stock") qui
+  // ne correspond pas forcément à une catégorie déjà connue de l'app — dans ce
+  // cas on l'ajoute comme nouvelle catégorie plutôt que de forcer une correspondance.
+  const categoryMatchesExisting = categoryHint && CATS.includes(categoryHint);
+  const preselectNew = !!(categoryHint && !categoryMatchesExisting);
+  const catOptions = CATS.map(c=>`<option value="${c}" ${(categoryMatchesExisting && c===categoryHint)?'selected':''}>${c}</option>`).join('')
+    + `<option value="__new__" ${preselectNew?'selected':''}>+ Nouvelle catégorie…${preselectNew?` (suggestion : ${categoryHint})`:''}</option>`;
 
   // Stocké en mémoire (pas dans le HTML) : plus robuste que d'injecter du
   // JSON dans un attribut onclick, notamment si un nom de fonds ou un
@@ -1312,8 +1346,10 @@ async function selectFundCandidate(item){
     ret: okMetrics?metrics.ret:8, vol: okMetrics?metrics.vol:15,
     ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
     ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
-    sortino_1y: okMetrics?metrics.sortino_1y:null, sortino_3y: okMetrics?metrics.sortino_3y:null, sortino_5y: okMetrics?metrics.sortino_5y:null,
-    dd_1y: okMetrics?metrics.dd_1y:null, dd_3y: okMetrics?metrics.dd_3y:null, dd_5y: okMetrics?metrics.dd_5y:null,
+    ret_max: okMetrics?metrics.ret_max:null, vol_max: okMetrics?metrics.vol_max:null,
+    sortino_1y: okMetrics?metrics.sortino_1y:null, sortino_3y: okMetrics?metrics.sortino_3y:null, sortino_5y: okMetrics?metrics.sortino_5y:null, sortino_max: okMetrics?metrics.sortino_max:null,
+    dd_1y: okMetrics?metrics.dd_1y:null, dd_3y: okMetrics?metrics.dd_3y:null, dd_5y: okMetrics?metrics.dd_5y:null, dd_max: okMetrics?metrics.dd_max:null,
+    inceptionDate: okMetrics?metrics.inception_date:null,
     last_price: okMetrics?metrics.last_price:null, last_price_eur: okMetrics?metrics.last_price_eur:null, last_price_date: okMetrics?metrics.last_price_date:null,
     nativeCurrency: okMetrics?(metrics.currency||'EUR'):'EUR',
     dist_policy: detectedDist, dist_basis: okMetrics?metrics.dist_basis:null,
@@ -1326,7 +1362,7 @@ async function selectFundCandidate(item){
   formEl.innerHTML = `
     <div class="note" style="margin-bottom:10px;">
       ${okMetrics
-        ? `Données réelles récupérées (${metrics.points} points d'historique) : rendement annualisé (3 ans, CAGR) <b style="color:var(--teal);">${metrics.ret.toFixed(1)}%</b>, volatilité <b style="color:var(--amber);">${metrics.vol.toFixed(1)}%</b>${metrics.last_price!=null ? `, dernier cours <b>${metrics.last_price.toFixed(2)} ${metrics.currency||''}</b>${metrics.last_price_eur!=null && metrics.currency!=='EUR' ? ` (${metrics.last_price_eur.toFixed(2)} €)` : ''} (${metrics.last_price_date||''})` : ''}.${detectedDist ? ` Distribution détectée : <b>${detectedDist}</b> (${metrics.dist_basis||'déduit des dividendes/nom'}) — à confirmer ci-dessous.` : ''}${metrics.quote_type ? ` Type d'instrument (Yahoo) : <b>${metrics.quote_type}</b>.` : ''}`
+        ? `Données réelles récupérées (${metrics.points} points d'historique depuis ${metrics.inception_date||'?'}) : rendement annualisé (3 ans, CAGR) <b style="color:var(--teal);">${metrics.ret.toFixed(1)}%</b>, volatilité <b style="color:var(--amber);">${metrics.vol.toFixed(1)}%</b>${metrics.last_price!=null ? `, dernier cours <b>${metrics.last_price.toFixed(2)} ${metrics.currency||''}</b>${metrics.last_price_eur!=null && metrics.currency!=='EUR' ? ` (${metrics.last_price_eur.toFixed(2)} €)` : ''} (${metrics.last_price_date||''})` : ''}.${detectedDist ? ` Distribution détectée : <b>${detectedDist}</b> (${metrics.dist_basis||'déduit des dividendes/nom'}) — à confirmer ci-dessous.` : ''}${metrics.quote_type ? ` Type d'instrument (Yahoo) : <b>${metrics.quote_type}</b>.` : ''}${categoryHint ? ` Catégorie Yahoo/Morningstar détectée : <b>${categoryHint}</b> — à confirmer ci-dessous.` : ' Aucune catégorie/zone géographique fournie par Yahoo pour ce fonds — à choisir vous-même ci-dessous.'}`
         : `Impossible de calculer le rendement/volatilité réels pour ${item.symbol} (${metrics && metrics.error ? metrics.error : 'erreur inconnue'}). Vous pouvez tout de même l'ajouter en renseignant des valeurs manuellement, mais elles ne seront pas fiables.`}
     </div>
     <div class="filter-group">
@@ -1338,9 +1374,11 @@ async function selectFundCandidate(item){
       <input class="search-input" id="newFundIsin" placeholder="ex. FR0000000000">
     </div>
     <div class="filter-group">
-      <label class="filter-label">Catégorie / zone</label>
-      <select class="search-input" id="newFundCat" onchange="if(this.value==='__new__'){document.getElementById('newFundCatCustom').style.display='block';}else{document.getElementById('newFundCatCustom').style.display='none';}">${catOptions}</select>
-      <input class="search-input" id="newFundCatCustom" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:6px;">
+      <label class="filter-label">Catégorie / zone ${categoryHint ? '<span style="color:var(--teal);">— suggestion Yahoo Finance ci-dessous, à confirmer</span>' : ''}</label>
+      <select class="search-input" id="newFundCat" onchange="if(this.value==='__new__'){document.getElementById('newFundCatCustom').style.display='block';document.getElementById('newFundCatCustom').focus();}else{document.getElementById('newFundCatCustom').style.display='none';}">
+        ${catOptions}
+      </select>
+      <input class="search-input" id="newFundCatCustom" placeholder="Nom de la nouvelle catégorie" style="display:${preselectNew ? 'block':'none'};margin-top:6px;" value="${preselectNew ? categoryHint.replace(/"/g,'&quot;') : ''}">
     </div>
     <div class="filter-group">
       <label class="filter-label">Politique de distribution — à VOUS de confirmer (fiche DIC)${detectedDist ? ` — suggestion : ${detectedDist}` : ''}</label>
@@ -1381,8 +1419,10 @@ function confirmAddFund(){
     ret: payload.ret, vol: Math.max(payload.vol, 0.05),
     ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret, vol_3y: Math.max(payload.vol,0.05),
     ret_5y: payload.ret_5y, vol_5y: payload.vol_5y,
-    sortino_1y: payload.sortino_1y, sortino_3y: payload.sortino_3y, sortino_5y: payload.sortino_5y,
-    dd_1y: payload.dd_1y, dd_3y: payload.dd_3y, dd_5y: payload.dd_5y,
+    ret_max: payload.ret_max, vol_max: payload.vol_max,
+    sortino_1y: payload.sortino_1y, sortino_3y: payload.sortino_3y, sortino_5y: payload.sortino_5y, sortino_max: payload.sortino_max,
+    dd_1y: payload.dd_1y, dd_3y: payload.dd_3y, dd_5y: payload.dd_5y, dd_max: payload.dd_max,
+    inceptionDate: payload.inceptionDate,
     last_price: payload.last_price, last_price_eur: payload.last_price_eur, last_price_date: payload.last_price_date,
     nativeCurrency: payload.nativeCurrency, price_currency: payload.nativeCurrency,
     dist_policy: payload.dist_policy, dist_basis: payload.dist_basis, quote_type: payload.quote_type,
@@ -1590,9 +1630,8 @@ let portfolioHistoryChart;
 async function renderPortfolioHistory(list, weights){
   const panel = document.getElementById('portfolioHistoryPanel');
   const wrap = document.getElementById('portfolioHistoryWrap');
-  const statsBox = document.getElementById('portfolioHistoryStats');
   panel.style.display = 'block';
-  statsBox.style.display = 'none';
+  document.getElementById('portfolioStatsTableWrap').style.display = 'none';
   wrap.innerHTML = '<div class="note">Récupération des historiques de cours pour la simulation…</div>';
 
   const base = currentBackendBase();
@@ -1653,18 +1692,44 @@ async function renderPortfolioHistory(list, weights){
     return anyNull ? null : sum*100;
   });
 
-  const cagr = cagrFromSeries(masterDates, portfolioValues);
-  const {vol, sortino} = volAndSortinoFromSeries(portfolioValues, 52);
-  const maxDD = maxDrawdownFromSeries(portfolioValues);
-
-  document.getElementById('phCagr').textContent = cagr!=null ? cagr.toFixed(1)+'%' : '—';
-  document.getElementById('phVol').textContent = vol!=null ? vol.toFixed(1)+'%' : '—';
-  document.getElementById('phDD').textContent = maxDD!=null ? maxDD.toFixed(1)+'%' : '—';
-  document.getElementById('phSortino').textContent = sortino!=null ? sortino.toFixed(2) : '—';
-  statsBox.style.display = 'grid';
+  const statsWrap = document.getElementById('portfolioStatsTableWrap');
+  const statsBody = document.getElementById('portfolioStatsTableBody');
+  const windows = [
+    {label:'1 an', years:1},
+    {label:'3 ans', years:3},
+    {label:'5 ans', years:5},
+    {label:'Depuis le début simulé', years:null},
+  ];
+  const lastDate = new Date(masterDates[masterDates.length-1]);
+  const rows = [];
+  windows.forEach(w=>{
+    let subDates = masterDates, subValues = portfolioValues;
+    if(w.years!=null){
+      const cutoff = new Date(lastDate); cutoff.setDate(cutoff.getDate() - Math.round(w.years*365.25));
+      const cutoffStr = cutoff.toISOString().slice(0,10);
+      const startIdx = masterDates.findIndex(d=>d>=cutoffStr);
+      if(startIdx<0) return; // pas assez d'historique simulé pour cet horizon
+      subDates = masterDates.slice(startIdx);
+      subValues = portfolioValues.slice(startIdx);
+      if(subDates.length < 8) return;
+    }
+    const c = cagrFromSeries(subDates, subValues);
+    const {vol, sortino} = volAndSortinoFromSeries(subValues, 52);
+    const dd = maxDrawdownFromSeries(subValues);
+    rows.push({label:w.label, c, vol, dd, sortino});
+  });
+  statsBody.innerHTML = rows.map(r=>`
+    <tr>
+      <td>${r.label}</td>
+      <td class="${r.c!=null && r.c>=0 ? 'num-pos':'num'}">${r.c!=null?r.c.toFixed(1)+'%':'—'}</td>
+      <td class="num-vol">${r.vol!=null?r.vol.toFixed(1)+'%':'—'}</td>
+      <td class="num-vol">${r.dd!=null?r.dd.toFixed(1)+'%':'—'}</td>
+      <td class="num">${r.sortino!=null?r.sortino.toFixed(2):'—'}</td>
+    </tr>`).join('');
+  statsWrap.style.display = 'block';
 
   if(typeof Chart === 'undefined'){
-    wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les statistiques ci-dessous restent valables.</div>';
+    wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les statistiques ci-dessus restent valables.</div>';
     return;
   }
   wrap.innerHTML = `<div class="chart-box tall"><canvas id="portfolioHistoryCanvas"></canvas></div>

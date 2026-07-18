@@ -259,6 +259,11 @@ def fetch_fund_info(tkr: "yf.Ticker") -> dict:
         "fund_size_million": fund_size_million,
         "quote_type": info.get("quoteType"),
         "fund_name": info.get("longName") or info.get("shortName"),
+        # Catégorie Morningstar/Yahoo (souvent une bonne indication de la zone
+        # géographique, ex. "Europe Stock", "Diversified Emerging Mkts") —
+        # fournie telle quelle, best-effort, à confirmer par l'utilisateur :
+        # ce n'est pas un champ garanti ni systématiquement présent.
+        "category_hint": info.get("category"),
     }
 
 
@@ -330,15 +335,16 @@ def detect_distribution_policy(tkr: "yf.Ticker", symbol: str) -> tuple[str, str]
 # Calcul complet des métriques d'un fonds (un seul téléchargement d'historique)
 # =============================================================================
 def compute_full_metrics(symbol: str) -> dict:
-    """À partir d'un seul téléchargement d'historique (5 ans, hebdomadaire) :
+    """À partir d'un seul téléchargement d'historique (le maximum
+    disponible, hebdomadaire) :
       - rendement annualisé = CAGR, volatilité, Sortino et Max Drawdown sur
-        1 an / 3 ans / 5 ans ;
+        1 an / 3 ans / 5 ans / depuis le début de l'historique disponible ;
       - le dernier cours de clôture (natif + converti en EUR) ;
-      - TER, encours et type d'instrument (best-effort, souvent absents
-        pour les fonds UCITS européens) ;
+      - TER, encours, type d'instrument et catégorie/zone (best-effort,
+        souvent absents ou approximatifs pour les fonds UCITS européens) ;
       - une détection best-effort de la politique de distribution."""
     tkr = yf.Ticker(symbol)
-    hist = tkr.history(period="5y", interval="1wk", auto_adjust=True)
+    hist = tkr.history(period="max", interval="1wk", auto_adjust=True)
     if hist.empty:
         raise ValueError(f"aucun historique renvoyé par Yahoo Finance pour {symbol}")
     closes = hist["Close"].dropna()
@@ -346,10 +352,13 @@ def compute_full_metrics(symbol: str) -> dict:
         raise ValueError(f"historique insuffisant pour {symbol} ({len(closes)} points)")
 
     last_date = closes.index[-1]
-    out: dict = {"points": int(len(closes))}
-    for label, years in (("1y", 1), ("3y", 3), ("5y", 5)):
-        cutoff = last_date - pd.Timedelta(days=int(years * 365.25))
-        sub = closes[closes.index >= cutoff]
+    out: dict = {"points": int(len(closes)), "inception_date": closes.index[0].strftime("%Y-%m-%d")}
+    for label, years in (("1y", 1), ("3y", 3), ("5y", 5), ("max", None)):
+        if years is None:
+            sub = closes  # toute la série disponible, depuis la création du fonds
+        else:
+            cutoff = last_date - pd.Timedelta(days=int(years * 365.25))
+            sub = closes[closes.index >= cutoff]
         stats = window_stats(sub)
         out[f"ret_{label}"] = stats["ret"]
         out[f"vol_{label}"] = stats["vol"]
@@ -396,6 +405,7 @@ def compute_full_metrics(symbol: str) -> dict:
     out["fund_size_million"] = fund_info["fund_size_million"]
     out["quote_type"] = fund_info["quote_type"]
     out["fund_name"] = fund_info["fund_name"]
+    out["category_hint"] = fund_info["category_hint"]
 
     dist_policy, dist_basis = detect_distribution_policy(tkr, symbol)
     out["dist_policy"] = dist_policy
