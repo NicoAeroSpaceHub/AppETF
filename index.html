@@ -284,10 +284,12 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 .fund-card-item .k{font-size:10.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px;}
 .fund-card-item .v{font-size:13px;}
 
-@media (max-width:760px){
-  #tableScrollWrap, #tableHScroll{display:none !important;}
-  .fund-cards{display:flex;}
-}
+/* La bascule automatique vers des cartes a été retirée à la demande : le
+   tableau est préféré pour le tri/la comparaison. Il reste maintenant bien
+   contenu dans sa largeur grâce au défilement horizontal interne du panneau
+   (comme le tableau récapitulatif de la page Portefeuille), plutôt que de
+   basculer sur un autre format d'affichage. */
+.fund-cards{display:none;}
 </style>
 </head>
 <body>
