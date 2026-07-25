@@ -1785,16 +1785,19 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   }
 
   const colors = ['#2fd7b3','#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c'];
+  // Affichage de gauche (passé le plus lointain pris en compte) à droite
+  // (aujourd'hui) : on inverse l'ordre de calcul (1 an → maxLookback ans).
+  const displayRows = [...rows].reverse();
   weightsWrap.innerHTML = '<div class="chart-box tall"><canvas id="rollingWeightsCanvas"></canvas></div>';
   const wCtx = document.getElementById('rollingWeightsCanvas');
   if(rollingWeightsChart) rollingWeightsChart.destroy();
   rollingWeightsChart = new Chart(wCtx, {
     type:'line',
     data:{
-      labels: rows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      labels: displayRows.map(r=>r.years+' an'+(r.years>1?'s':'')),
       datasets: list.map((a,k)=>({
         label: a.name,
-        data: rows.map(r=>r.weights[k]*100),
+        data: displayRows.map(r=>r.weights[k]*100),
         borderColor: colors[k%colors.length], backgroundColor: colors[k%colors.length],
         fill:true, stack:'w', pointRadius:0, borderWidth:1,
       }))
@@ -1804,7 +1807,7 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
       plugins:{ legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}},
         tooltip:{callbacks:{label:(c)=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`}} },
       scales:{
-        x:{title:{display:true,text:"Durée d'historique utilisée pour l'optimisation",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        x:{title:{display:true,text:"Durée d'historique utilisée (passé ← → aujourd'hui)",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
         y:{stacked:true, min:0, max:100, title:{display:true,text:'Allocation optimale (%)',color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}}
       }
     }
@@ -1816,18 +1819,18 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   rollingPerfChart = new Chart(pCtx, {
     type:'line',
     data:{
-      labels: rows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      labels: displayRows.map(r=>r.years+' an'+(r.years>1?'s':'')),
       datasets:[
-        { label:'Rendement attendu (%)', data: rows.map(r=>r.ret*100), borderColor:'#2fd7b3', backgroundColor:'#2fd7b3', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
-        { label:'Volatilité attendue (%)', data: rows.map(r=>r.vol*100), borderColor:'#f2b85c', backgroundColor:'#f2b85c', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
-        { label:'Ratio Rend./Vol.', data: rows.map(r=>r.sharpe), borderColor:'#7c8fff', backgroundColor:'#7c8fff', yAxisID:'y1', pointRadius:3, borderWidth:2, tension:0.15, borderDash:[4,3] },
+        { label:'Rendement attendu (%)', data: displayRows.map(r=>r.ret*100), borderColor:'#2fd7b3', backgroundColor:'#2fd7b3', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
+        { label:'Volatilité attendue (%)', data: displayRows.map(r=>r.vol*100), borderColor:'#f2b85c', backgroundColor:'#f2b85c', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
+        { label:'Ratio Rend./Vol.', data: displayRows.map(r=>r.sharpe), borderColor:'#7c8fff', backgroundColor:'#7c8fff', yAxisID:'y1', pointRadius:3, borderWidth:2, tension:0.15, borderDash:[4,3] },
       ]
     },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}} },
       scales:{
-        x:{title:{display:true,text:"Durée d'historique utilisée pour l'optimisation",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        x:{title:{display:true,text:"Durée d'historique utilisée (passé ← → aujourd'hui)",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
         y:{position:'left', title:{display:true,text:'%',color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
         y1:{position:'right', title:{display:true,text:'Ratio',color:'#5c6675'}, grid:{display:false}, ticks:{color:'#5c6675',font:{size:10}}}
       }
