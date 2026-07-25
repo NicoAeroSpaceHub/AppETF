@@ -144,15 +144,7 @@ a{color:inherit;}
 @media (max-width:980px){
   .sidebar{position:static;}
 }
-.filter-toggle{display:none;}
-.panel-title.filter-head{cursor:pointer;}
-@media (max-width:980px){
-  .filter-toggle{display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);font-size:11.5px;padding:5px 10px;border-radius:100px;}
-  .filter-toggle svg{transition:transform .18s ease;}
-  .filter-toggle.open svg{transform:rotate(180deg);}
-  #filterBody{display:none;}
-  #filterBody.open{display:block;}
-}
+.filter-toggle{display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);font-size:11.5px;padding:5px 10px;border-radius:100px;cursor:pointer;}
 .filter-group{margin-bottom:18px;}
 .filter-label{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;display:block;font-weight:500;}
 .chip-row{display:flex;flex-wrap:wrap;gap:6px;}
@@ -335,17 +327,12 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
     <!-- SIDEBAR FILTERS -->
     <div class="sidebar">
       <div class="panel">
-        <div class="panel-title filter-head" id="filterHead" onclick="toggleFilters()">
+        <div class="panel-title">
           Filtres
-          <span style="display:flex;align-items:center;gap:10px;">
-            <button class="reset-link" onclick="event.stopPropagation();resetFilters()">réinitialiser</button>
-            <button class="filter-toggle" id="filterToggleBtn" type="button">Afficher/masquer
-              <svg width="10" height="10" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </button>
-          </span>
+          <button class="reset-link" onclick="resetFilters()">réinitialiser</button>
         </div>
 
-        <div id="filterBody" class="open">
+        <div id="filterBody">
           <div class="filter-group">
             <label class="filter-label">Recherche</label>
             <input class="search-input" id="searchInput" placeholder="Nom, ISIN, indice…" oninput="renderTable()">
@@ -382,7 +369,7 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
             </div>
           </div>
 
-          <div class="note">Le PEA impose des ETF domiciliés en UE, cotés en euro et réglementés UCITS : l'univers disponible est par nature restreint et très majoritairement capitalisant.</div>
+          <div class="note">Le PEA impose des ETF domiciliés en UE, cotés en euro et réglementés UCITS : l'univers disponible est par nature restreint et très majoritairement capitalisant. Tous les filtres sont décochés par défaut côté restriction (rien n'est exclu) : décochez ce que vous ne voulez pas voir.</div>
         </div>
       </div>
     </div>
@@ -405,7 +392,7 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
             <span style="white-space:nowrap;">Backend :</span>
             <input type="text" id="backendUrl" value="" placeholder="laisser vide si héberg. avec cette page" style="width:220px;font-size:12.5px;">
           </div>
-          <div class="count" id="yahooStatus" style="flex-basis:100%;">Données estimées par défaut · non actualisées. Si cette page est servie par son propre backend (ex. déployée sur Render), laissez le champ vide. Sinon, renseignez l'URL de votre backend (ex. http://localhost:8000 ou https://votre-backend.onrender.com). Le premier appel après une période d'inactivité peut prendre jusqu'à une minute (le service gratuit "se réveille").</div>
+          <div class="count" id="yahooStatus" style="flex-basis:100%;">Aucune donnée pré-remplie : tant que vous n'avez pas cliqué sur "Actualiser", TER/encours/rendement/volatilité affichent "—" (rien n'est inventé). Si cette page est servie par son propre backend (ex. déployée sur Render), laissez le champ Backend vide. Sinon, renseignez son URL (ex. http://localhost:8000 ou https://votre-backend.onrender.com). Le premier appel après une période d'inactivité peut prendre jusqu'à une minute (le service gratuit "se réveille").</div>
         </div>
         <div class="note" style="margin-bottom:8px;">Astuce : cliquez sur le nom d'un fonds pour voir son cours dans le temps (onglet Graphique).</div>
         <div class="table-scroll" id="tableScrollWrap">
@@ -500,6 +487,27 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 
       <div class="obj-options" id="objOptions"></div>
 
+      <div class="filter-group">
+        <label class="filter-label">Période de cours prise en compte pour le calcul (rendements, volatilité, corrélations réels)</label>
+        <div class="range-row" style="gap:8px;">
+          <select class="search-input" id="optLookback" style="width:auto;" onchange="onOptLookbackChange()">
+            <option value="1y">Dernière année</option>
+            <option value="3y">3 dernières années</option>
+            <option value="5y" selected>5 dernières années</option>
+            <option value="10y">10 dernières années</option>
+            <option value="max">Maximum (depuis l'origine de chaque fonds)</option>
+          </select>
+        </div>
+        <div class="range-row" style="gap:8px;margin-top:8px;align-items:center;">
+          <label style="font-size:12.5px;color:var(--text-dim);">Du</label>
+          <input type="date" class="search-input" id="optStartDate" style="width:auto;" onchange="onOptDatesChange()">
+          <label style="font-size:12.5px;color:var(--text-dim);">au</label>
+          <input type="date" class="search-input" id="optEndDate" style="width:auto;" onchange="onOptDatesChange()">
+          <button class="reset-link" onclick="clearOptDates()">réinitialiser les dates</button>
+        </div>
+        <div class="note" style="margin-top:6px;">La corrélation et la covariance entre fonds sont désormais calculées à partir de leurs <b>cours réels</b> sur la période choisie (et non plus d'une estimation par zone géographique) : le résultat de l'optimisation dépend donc de la période sélectionnée.</div>
+      </div>
+
       <div class="invest-input">
         <span>Montant à investir</span>
         <input type="number" id="investAmount" value="10000" min="0" step="100">
@@ -557,10 +565,22 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       </div>
     </div>
 
+    <div class="panel" id="rollingWeightsPanel" style="display:none;">
+      <div class="panel-title">Sensibilité de l'allocation à la période de calcul</div>
+      <div class="note" id="rollingWeightsNote" style="margin-bottom:10px;">Pour chaque durée d'historique testée (1 an, 2 ans, … jusqu'au maximum commun disponible), l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible au nombre d'années de cours pris en compte.</div>
+      <div id="rollingWeightsWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette analyse.</div></div>
+    </div>
+
+    <div class="panel" id="rollingPerfPanel" style="display:none;">
+      <div class="panel-title">Rendement, volatilité et Sharpe du portefeuille optimal selon la période de calcul</div>
+      <div class="note" style="margin-bottom:10px;">Pour chaque durée d'historique testée, le portefeuille optimal correspondant (voir graphique ci-dessus) a ses propres rendement/volatilité/ratio rendement-volatilité attendus, calculés sur cette même période.</div>
+      <div id="rollingPerfWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette analyse.</div></div>
+    </div>
+
   </div>
 
   <div class="disclaimer">
-    <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. Les données de frais et d'encours sont issues d'une sélection publique d'ETF communément proposés sur le PEA ; par défaut, les rendements et volatilités sont des <b>estimations indicatives</b> basées sur les caractéristiques historiques générales des indices suivis, et non des séries de cours réelles à jour. Le bouton « Actualiser depuis le backend » interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer un rendement et une volatilité réalisés sur plusieurs périodes à partir des cours réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. La détection capitalisant/distribuant est déduite de l'historique réel des dividendes versés (un fonds capitalisant n'en verse jamais) : fiable dans la plupart des cas mais pas infaillible, en particulier pour un fonds distribuant très récemment lancé. En cas d'échec, l'estimation initiale est conservée et signalée comme telle (badge « Estimé », avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
+    <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. La liste des ETF (nom, ISIN, indice suivi) provient d'une sélection publique de fonds communément proposés sur le PEA, mais <b>aucune donnée chiffrée n'est pré-remplie</b> : TER, encours, dernier cours, rendement, volatilité, CAGR, Sortino, Max Drawdown et politique de distribution affichent « — » tant qu'ils n'ont pas été récupérés en direct via le bouton « Actualiser depuis le backend ». Ce bouton interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer ces valeurs à partir des cours réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. La détection capitalisant/distribuant est déduite du nom du fonds et de l'historique réel des dividendes versés : fiable dans la plupart des cas mais pas infaillible, en particulier pour un fonds distribuant très récemment lancé. En cas d'échec de l'actualisation, aucune valeur n'est affichée plutôt qu'une estimation invérifiée (badge « Estimé » avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
     <div class="footer-links"><span>Trade Republic — instruments éligibles PEA</span><span>Sources : fiches ETF des émetteurs (Amundi, iShares, BNP Paribas Easy)</span></div>
   </div>
 
@@ -588,9 +608,15 @@ const ASSETS = [
   {id:'mon1', name:'Amundi PEA Euro Court Terme', isin:'FR0013346681', category:'Monétaire', index:'€STR / Euro court terme', ter:0.25, fundSize:300, ret:2.7, vol:0.4, region:{}, cash:true},
 ];
 ASSETS.forEach(a=>{
-  a.currency='EUR'; a.dist='Capitalisant'; a.sharpe = a.ret/Math.max(a.vol,0.05);
+  a.currency='EUR'; a.dist='Capitalisant';
   a.liveData=false; a.yahooSymbol=null; a.liveAt=null; a.lastError=null; a.custom=false;
-  a.ret_1y=null; a.vol_1y=null; a.ret_3y=a.ret; a.vol_3y=a.vol; a.ret_5y=null; a.vol_5y=null; a.ret_max=null; a.vol_max=null;
+  // Aucune donnée financière n'est affichée tant qu'elle n'a pas été vérifiée
+  // en direct via Yahoo Finance (bouton "Actualiser depuis le backend") :
+  // pas de TER, d'encours, de rendement ou de volatilité pré-remplis, même
+  // à partir de sources publiques consultées lors de la construction de
+  // cette liste — ces valeurs peuvent changer et ne sont pas vérifiées ici.
+  a.ter=null; a.fundSize=null; a.ret=null; a.vol=null; a.sharpe=null;
+  a.ret_1y=null; a.vol_1y=null; a.ret_3y=null; a.vol_3y=null; a.ret_5y=null; a.vol_5y=null; a.ret_max=null; a.vol_max=null;
   a.sortino_1y=null; a.sortino_3y=null; a.sortino_5y=null; a.sortino_max=null;
   a.dd_1y=null; a.dd_3y=null; a.dd_5y=null; a.dd_max=null;
   a.last_price=null; a.last_price_eur=null; a.last_price_date=null; a.price_currency='EUR'; a.nativeCurrency='EUR';
@@ -723,8 +749,8 @@ function saveColumnPrefs(){
    ===================================================================== */
 let state = {
   cats: new Set(CATS),
-  dist: new Set(['Capitalisant']),
-  ccy: new Set(['EUR']),
+  dist: new Set(['Capitalisant','Distribuant']),
+  ccy: new Set(['EUR','USD']),
   selected: new Set(['wld1','us1','eu2','em1']),
   sort: {key:'ret_3y', dir:-1},
   metric: 'ter',
@@ -766,7 +792,7 @@ function initFilters(){
   document.getElementById('fundRangeVal').textContent = document.getElementById('fundRange').value + 'M€';
 }
 function resetFilters(){
-  state.cats = new Set(CATS); state.dist = new Set(['Capitalisant']); state.ccy = new Set(['EUR']);
+  state.cats = new Set(CATS); state.dist = new Set(['Capitalisant','Distribuant']); state.ccy = new Set(['EUR','USD']);
   document.getElementById('searchInput').value='';
   document.getElementById('terRange').value = 0.6;
   document.getElementById('fundRange').value = 0;
@@ -1544,47 +1570,269 @@ function resetResults(){
   document.getElementById('resultsPanel').style.display='none';
   document.getElementById('frontierPanel').style.display='none';
   document.getElementById('portfolioHistoryPanel').style.display='none';
+  document.getElementById('rollingWeightsPanel').style.display='none';
+  document.getElementById('rollingPerfPanel').style.display='none';
   document.getElementById('optNote').textContent='';
   portfolioSimData = null;
 }
 
-function runOptimization(){
-  const requested = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
-  const list = requested.filter(a=>a.ret!=null && a.vol!=null);
-  const excluded = requested.filter(a=>a.ret==null || a.vol==null);
+/* =====================================================================
+   9bis4. FENÊTRE TEMPORELLE DE CALCUL DE L'OPTIMISATION
+   ===================================================================== */
+function onOptLookbackChange(){
+  document.getElementById('optStartDate').value = '';
+  document.getElementById('optEndDate').value = '';
+}
+function onOptDatesChange(){ /* les dates ne sont lues qu'au moment du clic sur "Lancer l'optimisation" */ }
+function clearOptDates(){
+  document.getElementById('optStartDate').value = '';
+  document.getElementById('optEndDate').value = '';
+}
+function resolveLookbackWindow(){
+  const startRaw = document.getElementById('optStartDate').value;
+  const endRaw = document.getElementById('optEndDate').value;
+  if(startRaw || endRaw){
+    return { start: startRaw || null, end: endRaw || null, label: `du ${startRaw||"début disponible"} au ${endRaw||"aujourd'hui"}` };
+  }
+  const preset = document.getElementById('optLookback').value;
+  if(preset === 'max') return { start: null, end: null, label: "maximum disponible (depuis l'origine de chaque fonds)" };
+  const years = parseInt(preset, 10);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - Math.round(years*365.25));
+  return { start: cutoff.toISOString().slice(0,10), end: null, label: `${years} dernière${years>1?'s':''} année${years>1?'s':''}` };
+}
+
+/* =====================================================================
+   9bis5. RÉCUPÉRATION ET ALIGNEMENT DES COURS RÉELS (pour mu/Sigma)
+   ===================================================================== */
+async function fetchFundHistories(list){
+  const base = currentBackendBase();
+  const results = [];
+  for(const a of list){
+    try{
+      const idParam = a.yahooSymbol ? `symbol=${encodeURIComponent(a.yahooSymbol)}` : `isin=${encodeURIComponent(a.isin)}`;
+      const res = await fetch(`${base}/api/history?${idParam}&range=max&interval=1wk`);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      if(data.error || !data.closes || data.closes.length===0) throw new Error(data.error || 'aucune donnée');
+      results.push({id:a.id, name:a.name, dates:data.dates, closes:data.closes, error:null});
+    }catch(err){
+      results.push({id:a.id, name:a.name, dates:[], closes:[], error:err.message});
+    }
+  }
+  return results;
+}
+// Aligne plusieurs séries de cours sur une grille de dates commune (valeur la
+// plus proche antérieure), restreinte à [sinceDate, untilDate] si fournis.
+function alignSeries(seriesList, sinceDate, untilDate){
+  const commonStart = seriesList.reduce((latest,s)=> s.dates[0]>latest ? s.dates[0] : latest, seriesList[0].dates[0]);
+  const effectiveStart = (sinceDate && sinceDate>commonStart) ? sinceDate : commonStart;
+  const base_ref = seriesList.reduce((shortest,s)=> s.dates.length<shortest.dates.length?s:shortest, seriesList[0]);
+  let masterDates = base_ref.dates.filter(d=>d>=effectiveStart);
+  if(untilDate) masterDates = masterDates.filter(d=>d<=untilDate);
+  function nearestValue(dates, closes, targetDate){
+    let idx=-1;
+    for(let i=0;i<dates.length;i++){ if(dates[i]<=targetDate) idx=i; else break; }
+    return idx>=0 ? closes[idx] : null;
+  }
+  const aligned = seriesList.map(s=> masterDates.map(d=>nearestValue(s.dates,s.closes,d)));
+  return { masterDates, aligned };
+}
+// Calcule un vecteur de rendement moyen annualisé et une matrice de
+// covariance annualisée RÉELS à partir de cours alignés (rendements
+// logarithmiques hebdomadaires, ppy=52) — remplace l'ancienne corrélation
+// synthétique par zone géographique.
+function muSigmaFromAlignedPrices(aligned, ppy){
+  const n = aligned.length;
+  const logRets = aligned.map(series=>{
+    const rets=[];
+    for(let i=1;i<series.length;i++){
+      rets.push((series[i]!=null && series[i-1]!=null && series[i-1]>0) ? Math.log(series[i]/series[i-1]) : null);
+    }
+    return rets;
+  });
+  const T = logRets[0] ? logRets[0].length : 0;
+  const validIdx = [];
+  for(let t=0;t<T;t++){ if(logRets.every(r=>r[t]!=null)) validIdx.push(t); }
+  if(validIdx.length < 8) return null; // pas assez d'observations communes pour une covariance fiable
+  const means = logRets.map(r=> validIdx.reduce((s,t)=>s+r[t],0)/validIdx.length);
+  const mu = means.map(m=> Math.exp(m*ppy)-1);
+  const Sigma = [];
+  for(let i=0;i<n;i++){
+    const row=[];
+    for(let j=0;j<n;j++){
+      let cov=0;
+      validIdx.forEach(t=>{ cov += (logRets[i][t]-means[i])*(logRets[j][t]-means[j]); });
+      cov = (cov/validIdx.length)*ppy;
+      row.push(cov);
+    }
+    Sigma.push(row);
+  }
+  return { mu, Sigma, n_obs: validIdx.length };
+}
+
+async function runOptimization(){
+  const list = [...state.selected].map(id=>ASSETS.find(a=>a.id===id)).filter(Boolean);
   const note = document.getElementById('optNote');
   if(list.length < 2){
-    note.textContent = excluded.length
-      ? `Pas assez d'ETF avec des données réelles : ${excluded.map(a=>a.name).join(', ')} n'ont pas de rendement/volatilité connus (Yahoo Finance n'a pas encore été interrogé avec succès pour ${excluded.length>1?'eux':'lui'}). Actualisez-les ou sélectionnez d'autres fonds.`
-      : "Sélectionnez au moins 2 ETF dans le tableau pour lancer l'optimisation.";
+    note.textContent = "Sélectionnez au moins 2 ETF dans le tableau pour lancer l'optimisation.";
     note.style.color = 'var(--rose)';
     return;
   }
-  note.style.color = excluded.length ? 'var(--amber)' : 'var(--text-faint)';
-  note.textContent = excluded.length
-    ? `Optimisation en cours… (${excluded.map(a=>a.name).join(', ')} exclu${excluded.length>1?'s':''} : pas de données réelles disponibles)`
-    : 'Optimisation en cours…';
   document.getElementById('runBtn').disabled = true;
+  note.style.color = 'var(--text-faint)';
+  note.textContent = 'Récupération des cours réels pour le calcul…';
 
-  setTimeout(()=>{
-    const {mu, Sigma} = buildMuSigma(list);
+  const histories = await fetchFundHistories(list);
+  const ok = histories.filter(h=>!h.error);
+  const failed = histories.filter(h=>h.error);
+  const okList = list.filter(a=>ok.some(h=>h.id===a.id));
+
+  if(okList.length < 2){
+    note.textContent = `Historique de cours insuffisant pour lancer l'optimisation. ${failed.map(f=>`${f.name} : ${f.error}`).join(' · ')}`;
+    note.style.color = 'var(--rose)';
+    document.getElementById('runBtn').disabled = false;
+    return;
+  }
+
+  const window = resolveLookbackWindow();
+  const {masterDates, aligned} = alignSeries(ok, window.start, window.end);
+  const stats = muSigmaFromAlignedPrices(aligned, 52);
+
+  if(!stats){
+    note.textContent = `Pas assez de cours communs sur la période choisie (${window.label}) pour calculer une covariance fiable — élargissez la période ou choisissez d'autres fonds.`;
+    note.style.color = 'var(--rose)';
+    document.getElementById('runBtn').disabled = false;
+    return;
+  }
+
+  note.textContent = `Optimisation en cours… (${stats.n_obs} semaines de cours communes, ${window.label})` + (failed.length ? ` — ${failed.map(f=>f.name).join(', ')} exclu${failed.length>1?'s':''} : historique indisponible.` : '');
+
+  setTimeout(async ()=>{
+    const { mu, Sigma } = stats;
     const param = { targetVol: state.targetVol/100, targetReturn: state.targetReturn/100 };
     const objective = makeObjective(state.objective, mu, Sigma, param);
-    const best = cmaes(objective, list.length, {maxGen:100});
+    const best = cmaes(objective, okList.length, {maxGen:100});
     const w = softmax(best.x);
 
     const ret = vDot(w, mu);
     const vol = Math.sqrt(Math.max(vDot(w, matVec(Sigma,w)), 1e-9));
-    const sharpe = ret/vol;
+    const sharpe = vol>1e-6 ? ret/vol : null;
 
-    displayResults(list, w, ret, vol, sharpe);
-    displayFrontier(list, mu, Sigma, {vol, ret});
-    renderPortfolioHistory(list, w);
+    displayResults(okList, w, ret, vol, sharpe);
+    displayFrontier(okList, mu, Sigma, {vol, ret});
+    renderPortfolioHistory(okList, w); // simulation depuis l'origine de chaque fonds (indépendant de la fenêtre choisie ci-dessus)
 
     note.style.color = 'var(--text-dim)';
-    note.textContent = `Convergence CMA-ES obtenue sur ${list.length} actifs (100 générations).` + (excluded.length ? ` (${excluded.map(a=>a.name).join(', ')} exclu${excluded.length>1?'s':''} du calcul : pas de données réelles.)` : '');
+    note.textContent = `Convergence CMA-ES obtenue sur ${okList.length} actifs (${stats.n_obs} semaines de cours communes, période : ${window.label}).` + (failed.length ? ` ${failed.map(f=>f.name).join(', ')} exclu${failed.length>1?'s':''} du calcul (historique indisponible).` : '');
     document.getElementById('runBtn').disabled = false;
+
+    // Analyse de sensibilité : ré-optimisation pour chaque durée d'historique (1 an, 2 ans, …)
+    runRollingAnalysis(okList, ok, state.objective, param);
   }, 30);
+}
+
+/* =====================================================================
+   9bis6. ANALYSE DE SENSIBILITÉ À LA PÉRIODE DE CALCUL (rolling window)
+   ===================================================================== */
+let rollingWeightsChart, rollingPerfChart;
+async function runRollingAnalysis(list, histories, objectiveType, param){
+  const weightsPanel = document.getElementById('rollingWeightsPanel');
+  const perfPanel = document.getElementById('rollingPerfPanel');
+  const weightsWrap = document.getElementById('rollingWeightsWrap');
+  const perfWrap = document.getElementById('rollingPerfWrap');
+  weightsPanel.style.display = 'block';
+  perfPanel.style.display = 'block';
+  weightsWrap.innerHTML = '<div class="note">Calcul de la sensibilité à la période (plusieurs ré-optimisations)…</div>';
+  perfWrap.innerHTML = '';
+
+  const {masterDates: fullDates} = alignSeries(histories, null, null);
+  const totalYears = (new Date(fullDates[fullDates.length-1]) - new Date(fullDates[0])) / (1000*3600*24*365.25);
+  const maxLookback = Math.min(15, Math.floor(totalYears));
+
+  if(maxLookback < 1){
+    weightsWrap.innerHTML = '<div class="placeholder">Historique commun trop court entre ces fonds pour une analyse de sensibilité (moins d\'un an).</div>';
+    perfWrap.innerHTML = '';
+    return;
+  }
+
+  const rows = [];
+  for(let L=1; L<=maxLookback; L++){
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - Math.round(L*365.25));
+    const sinceStr = cutoff.toISOString().slice(0,10);
+    const {aligned} = alignSeries(histories, sinceStr, null);
+    const stats = muSigmaFromAlignedPrices(aligned, 52);
+    if(!stats) continue;
+    const objective = makeObjective(objectiveType, stats.mu, stats.Sigma, param);
+    const best = cmaes(objective, list.length, {maxGen:70});
+    const w = softmax(best.x);
+    const ret = vDot(w, stats.mu);
+    const vol = Math.sqrt(Math.max(vDot(w, matVec(stats.Sigma,w)), 1e-9));
+    rows.push({ years:L, weights:w, ret, vol, sharpe: vol>1e-6?ret/vol:null });
+  }
+
+  if(rows.length < 2){
+    weightsWrap.innerHTML = '<div class="placeholder">Pas assez de durées différentes calculables pour tracer cette analyse.</div>';
+    perfWrap.innerHTML = '';
+    return;
+  }
+
+  document.getElementById('rollingWeightsNote').textContent = `Pour chaque durée d'historique testée (1 à ${rows[rows.length-1].years} ans avant aujourd'hui), l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible au nombre d'années de cours pris en compte.`;
+
+  if(typeof Chart === 'undefined'){
+    weightsWrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée).</div>';
+    perfWrap.innerHTML = '';
+    return;
+  }
+
+  const colors = ['#2fd7b3','#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c'];
+  weightsWrap.innerHTML = '<div class="chart-box tall"><canvas id="rollingWeightsCanvas"></canvas></div>';
+  const wCtx = document.getElementById('rollingWeightsCanvas');
+  if(rollingWeightsChart) rollingWeightsChart.destroy();
+  rollingWeightsChart = new Chart(wCtx, {
+    type:'line',
+    data:{
+      labels: rows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      datasets: list.map((a,k)=>({
+        label: a.name,
+        data: rows.map(r=>r.weights[k]*100),
+        borderColor: colors[k%colors.length], backgroundColor: colors[k%colors.length],
+        fill:true, stack:'w', pointRadius:0, borderWidth:1,
+      }))
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}},
+        tooltip:{callbacks:{label:(c)=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`}} },
+      scales:{
+        x:{title:{display:true,text:"Durée d'historique utilisée pour l'optimisation",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        y:{stacked:true, min:0, max:100, title:{display:true,text:'Allocation optimale (%)',color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}}
+      }
+    }
+  });
+
+  perfWrap.innerHTML = '<div class="chart-box tall"><canvas id="rollingPerfCanvas"></canvas></div>';
+  const pCtx = document.getElementById('rollingPerfCanvas');
+  if(rollingPerfChart) rollingPerfChart.destroy();
+  rollingPerfChart = new Chart(pCtx, {
+    type:'line',
+    data:{
+      labels: rows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      datasets:[
+        { label:'Rendement attendu (%)', data: rows.map(r=>r.ret*100), borderColor:'#2fd7b3', backgroundColor:'#2fd7b3', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
+        { label:'Volatilité attendue (%)', data: rows.map(r=>r.vol*100), borderColor:'#f2b85c', backgroundColor:'#f2b85c', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
+        { label:'Ratio Rend./Vol.', data: rows.map(r=>r.sharpe), borderColor:'#7c8fff', backgroundColor:'#7c8fff', yAxisID:'y1', pointRadius:3, borderWidth:2, tension:0.15, borderDash:[4,3] },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}} },
+      scales:{
+        x:{title:{display:true,text:"Durée d'historique utilisée pour l'optimisation",color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        y:{position:'left', title:{display:true,text:'%',color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        y1:{position:'right', title:{display:true,text:'Ratio',color:'#5c6675'}, grid:{display:false}, ticks:{color:'#5c6675',font:{size:10}}}
+      }
+    }
+  });
 }
 
 let allocChart, frontierChart;
@@ -1592,7 +1840,7 @@ function displayResults(list, w, ret, vol, sharpe){
   document.getElementById('resultsPanel').style.display='block';
   document.getElementById('resRet').textContent = (ret*100).toFixed(2)+'%';
   document.getElementById('resVol').textContent = (vol*100).toFixed(2)+'%';
-  document.getElementById('resSharpe').textContent = sharpe.toFixed(2);
+  document.getElementById('resSharpe').textContent = sharpe!=null ? sharpe.toFixed(2) : '—';
 
   const amount = parseFloat(document.getElementById('investAmount').value) || 0;
   const order = list.map((a,i)=>({a, w:w[i]})).sort((x,y)=>y.w-x.w);
@@ -1908,21 +2156,6 @@ function renderPortfolioHistoryChart(){
 }
 
 /* =====================================================================
-   9bis. REPLI DES FILTRES (mobile)
-   ===================================================================== */
-function toggleFilters(){
-  document.getElementById('filterBody').classList.toggle('open');
-  document.getElementById('filterToggleBtn').classList.toggle('open');
-}
-function initFilterCollapse(){
-  const isMobile = window.innerWidth < 980;
-  const body = document.getElementById('filterBody');
-  const btn = document.getElementById('filterToggleBtn');
-  if(isMobile){ body.classList.remove('open'); btn.classList.remove('open'); }
-  else { body.classList.add('open'); btn.classList.add('open'); }
-}
-
-/* =====================================================================
    9bis2. ONGLETS (pages)
    ===================================================================== */
 function switchPage(page){
@@ -2109,7 +2342,6 @@ async function renderChartPage(){
 initFilters();
 renderTable();       // le tableau et les filtres ne dépendent pas de Chart.js : on les affiche tout de suite
 renderObjectives();
-initFilterCollapse();
 renderChartSelect();
 renderChartTray();
 
