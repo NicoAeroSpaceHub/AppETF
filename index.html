@@ -538,6 +538,16 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
         <div class="donut-box"><canvas id="allocDonut"></canvas></div>
         <div class="alloc-list" id="allocList"></div>
       </div>
+      <div id="manualWeightsSection" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);">
+        <div class="panel-title" style="margin-bottom:10px;">Ajuster les poids manuellement</div>
+        <div class="note" style="margin-bottom:10px;">Déplacez les curseurs pour tester une allocation différente de l'optimum trouvé — les statistiques ci-dessus, la courbe d'historique et le Monte-Carlo se recalculent avec vos poids, sans relancer l'optimiseur.</div>
+        <div id="manualWeightsSliders"></div>
+        <div class="range-row" style="margin-top:10px;">
+          <span class="range-val mono" id="manualWeightsSum">Somme : 100.0%</span>
+          <button class="run-btn" style="width:auto;padding:9px 16px;margin:0;font-size:12.5px;" onclick="applyManualWeights()">Appliquer ces poids</button>
+          <button class="reset-link" onclick="resetToOptimalWeights()">revenir à l'optimum</button>
+        </div>
+      </div>
     </div>
 
     <div class="panel" id="frontierPanel" style="display:none;">
@@ -547,7 +557,18 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 
     <div class="panel" id="portfolioHistoryPanel" style="display:none;">
       <div class="panel-title">Historique du portefeuille optimal (simulation)</div>
-      <div class="note" style="margin-bottom:10px;">Simulation « buy-and-hold » : les fonds sont achetés une seule fois selon les pourcentages optimaux ci-dessus, sans réajustement ultérieur des poids. La période affichée commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible (le fonds le plus récent limite le point de départ).</div>
+      <div class="note" style="margin-bottom:10px;" id="portfolioHistoryModeNote">Simulation « buy-and-hold » : les fonds sont achetés une seule fois selon les pourcentages optimaux ci-dessus, sans réajustement ultérieur des poids. La période affichée commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible (le fonds le plus récent limite le point de départ).</div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;">
+        <select class="search-input" id="rebalanceMode" style="width:auto;" onchange="renderPortfolioHistoryChart()">
+          <option value="none">Buy & hold (aucun rééquilibrage)</option>
+          <option value="annual">Rééquilibrage annuel</option>
+          <option value="quarterly">Rééquilibrage trimestriel</option>
+          <option value="monthly">Rééquilibrage mensuel</option>
+        </select>
+        <select class="search-input" id="benchmarkSelect" style="width:auto;" onchange="renderPortfolioHistoryChart()">
+          <option value="">Sans benchmark</option>
+        </select>
+      </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-bottom:10px;">
         <input type="checkbox" class="chk" id="portfolioShowComponents" onchange="renderPortfolioHistoryChart()"> Superposer les fonds individuels qui composent le portefeuille
       </label>
@@ -575,6 +596,31 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       <div class="panel-title">Rendement, volatilité et Sharpe du portefeuille optimal selon la période de calcul</div>
       <div class="note" style="margin-bottom:10px;">Pour chaque durée d'historique testée, le portefeuille optimal correspondant (voir graphique ci-dessus) a ses propres rendement/volatilité/ratio rendement-volatilité attendus, calculés sur cette même période.</div>
       <div id="rollingPerfWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette analyse.</div></div>
+    </div>
+
+    <div class="panel" id="monteCarloPanel" style="display:none;">
+      <div class="panel-title">Projection future (simulation Monte-Carlo)</div>
+      <div class="note" style="margin-bottom:10px;">Simule des milliers de trajectoires futures possibles à partir du rendement et de la volatilité attendus du portefeuille (mouvement brownien géométrique). <b>Ce n'est pas une prédiction</b> : les rendements réels ne suivent pas une loi normale parfaite (chocs, krachs), et l'hypothèse que le futur ressemblera statistiquement au passé récent peut ne pas se vérifier. À lire comme un ordre de grandeur de l'incertitude, pas comme un objectif.</div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;">
+        <label style="font-size:12.5px;color:var(--text-dim);">Horizon</label>
+        <select class="search-input" id="mcYears" style="width:auto;" onchange="renderMonteCarlo()">
+          <option value="1">1 an</option>
+          <option value="5">5 ans</option>
+          <option value="10" selected>10 ans</option>
+          <option value="20">20 ans</option>
+          <option value="30">30 ans</option>
+        </select>
+        <label style="font-size:12.5px;color:var(--text-dim);">Versement initial</label>
+        <input type="number" class="search-input" id="mcInitial" style="width:110px;" value="10000" min="0" step="500" onchange="renderMonteCarlo()">
+        <label style="font-size:12.5px;color:var(--text-dim);">Versement mensuel</label>
+        <input type="number" class="search-input" id="mcMonthly" style="width:100px;" value="0" min="0" step="50" onchange="renderMonteCarlo()">
+      </div>
+      <div id="monteCarloWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette projection.</div></div>
+      <div class="results-grid" id="mcStats" style="display:none;margin-top:14px;">
+        <div class="metric-card"><div class="label">Scénario défavorable (10e percentile)</div><div class="value" style="color:var(--rose);" id="mcP10">—</div></div>
+        <div class="metric-card"><div class="label">Scénario médian</div><div class="value teal" id="mcP50">—</div></div>
+        <div class="metric-card"><div class="label">Scénario favorable (90e percentile)</div><div class="value indigo" id="mcP90">—</div></div>
+      </div>
     </div>
 
   </div>
@@ -1566,14 +1612,18 @@ function removeCustomETF(id){
 /* =====================================================================
    9. LANCEMENT OPTIMISATION + RENDU RESULTATS
    ===================================================================== */
+let currentPortfolio = null; // { list, mu, Sigma, weightsOptimal, weightsCurrent } — état partagé par poids manuels + Monte-Carlo
+
 function resetResults(){
   document.getElementById('resultsPanel').style.display='none';
   document.getElementById('frontierPanel').style.display='none';
   document.getElementById('portfolioHistoryPanel').style.display='none';
   document.getElementById('rollingWeightsPanel').style.display='none';
   document.getElementById('rollingPerfPanel').style.display='none';
+  document.getElementById('monteCarloPanel').style.display='none';
   document.getElementById('optNote').textContent='';
   portfolioSimData = null;
+  currentPortfolio = null;
 }
 
 /* =====================================================================
@@ -1720,7 +1770,9 @@ async function runOptimization(){
 
     displayResults(okList, w, ret, vol, sharpe);
     displayFrontier(okList, mu, Sigma, {vol, ret});
+    currentPortfolio = { list: okList, mu, Sigma, weightsOptimal: w, weightsCurrent: w };
     renderPortfolioHistory(okList, w); // simulation depuis l'origine de chaque fonds (indépendant de la fenêtre choisie ci-dessus)
+    renderMonteCarlo();
 
     note.style.color = 'var(--text-dim)';
     note.textContent = `Convergence CMA-ES obtenue sur ${okList.length} actifs (${stats.n_obs} semaines de cours communes, période : ${window.label}).` + (failed.length ? ` ${failed.map(f=>f.name).join(', ')} exclu${failed.length>1?'s':''} du calcul (historique indisponible).` : '');
@@ -1838,19 +1890,113 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   });
 }
 
+/* =====================================================================
+   9bis7. PROJECTION FUTURE (MONTE-CARLO)
+   ===================================================================== */
+let monteCarloChart;
+function renderMonteCarlo(){
+  const panel = document.getElementById('monteCarloPanel');
+  if(!currentPortfolio){ panel.style.display='none'; return; }
+  panel.style.display = 'block';
+
+  const { mu, Sigma, weightsCurrent } = currentPortfolio;
+  const ret = vDot(weightsCurrent, mu);
+  const vol = Math.sqrt(Math.max(vDot(weightsCurrent, matVec(Sigma,weightsCurrent)), 1e-9));
+
+  const years = parseFloat(document.getElementById('mcYears').value) || 10;
+  const initial = Math.max(0, parseFloat(document.getElementById('mcInitial').value) || 0);
+  const monthly = Math.max(0, parseFloat(document.getElementById('mcMonthly').value) || 0);
+
+  const stepsPerYear = 12;
+  const totalSteps = Math.round(years*stepsPerYear);
+  const dt = 1/stepsPerYear;
+  // Mouvement brownien géométrique : dérive en log ajustée de la variance
+  // pour que la moyenne arithmétique du processus corresponde bien à `ret`.
+  const driftStepLog = (Math.log(1+ret) - 0.5*vol*vol) * dt;
+  const sigmaStep = vol*Math.sqrt(dt);
+  const nSims = 1200;
+
+  const allPaths = [];
+  for(let s=0; s<nSims; s++){
+    let value = initial;
+    const path = [value];
+    for(let t=1;t<=totalSteps;t++){
+      const growth = Math.exp(driftStepLog + sigmaStep*randn());
+      value = value*growth + monthly;
+      path.push(value);
+    }
+    allPaths.push(path);
+  }
+  const percentiles = [];
+  for(let t=0;t<=totalSteps;t++){
+    const vals = allPaths.map(p=>p[t]).sort((a,b)=>a-b);
+    const pick = (q)=> vals[Math.min(vals.length-1, Math.floor(q*vals.length))];
+    percentiles.push({ p10:pick(0.10), p25:pick(0.25), p50:pick(0.50), p75:pick(0.75), p90:pick(0.90) });
+  }
+  const labels = percentiles.map((_,t)=> (t/stepsPerYear).toFixed(1)+' an'+((t/stepsPerYear)>=2?'s':''));
+  const totalInvested = initial + monthly*totalSteps;
+  const final = percentiles[totalSteps];
+
+  document.getElementById('mcP10').textContent = Math.round(final.p10).toLocaleString('fr-FR')+' €';
+  document.getElementById('mcP50').textContent = Math.round(final.p50).toLocaleString('fr-FR')+' €';
+  document.getElementById('mcP90').textContent = Math.round(final.p90).toLocaleString('fr-FR')+' €';
+  document.getElementById('mcStats').style.display = 'grid';
+
+  const wrap = document.getElementById('monteCarloWrap');
+  if(typeof Chart === 'undefined'){
+    wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les chiffres ci-dessus restent valables.</div>';
+    return;
+  }
+  wrap.innerHTML = '<div class="chart-box tall"><canvas id="monteCarloCanvas"></canvas></div>' +
+    `<div class="note" style="margin-top:8px;">${nSims.toLocaleString('fr-FR')} trajectoires simulées à partir du rendement (${(ret*100).toFixed(1)}%/an) et de la volatilité (${(vol*100).toFixed(1)}%/an) du portefeuille actuellement affiché ci-dessus (poids optimaux ou manuels). Total versé sur la période : ${Math.round(totalInvested).toLocaleString('fr-FR')} €. Bande claire = 10ᵉ-90ᵉ percentile, bande foncée = 25ᵉ-75ᵉ percentile.</div>`;
+
+  const ctx = document.getElementById('monteCarloCanvas');
+  if(monteCarloChart) monteCarloChart.destroy();
+  monteCarloChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'P10', data:percentiles.map(p=>p.p10), borderColor:'transparent', pointRadius:0, fill:false },
+        { label:'P10–P90', data:percentiles.map(p=>p.p90), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.10)', pointRadius:0, fill:'-1' },
+        { label:'P25', data:percentiles.map(p=>p.p25), borderColor:'transparent', pointRadius:0, fill:false },
+        { label:'P25–P75', data:percentiles.map(p=>p.p75), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.22)', pointRadius:0, fill:'-1' },
+        { label:'Médiane', data:percentiles.map(p=>p.p50), borderColor:'#2fd7b3', borderWidth:2, pointRadius:0, fill:false },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:(c)=> c.dataset.label==='Médiane' ? `Médiane : ${Math.round(c.parsed.y).toLocaleString('fr-FR')} €` : null}}
+      },
+      scales:{
+        x:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
+        y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=>Math.round(v).toLocaleString('fr-FR')+' €'}, title:{display:true, text:'Valeur du portefeuille (€)', color:'#5c6675'}}
+      }
+    }
+  });
+}
+
 let allocChart, frontierChart;
 function displayResults(list, w, ret, vol, sharpe){
   document.getElementById('resultsPanel').style.display='block';
+  renderResultMetrics(ret, vol, sharpe);
+  renderAllocation(list, w);
+  renderManualWeightSliders(list, w);
+}
+function renderResultMetrics(ret, vol, sharpe){
   document.getElementById('resRet').textContent = (ret*100).toFixed(2)+'%';
   document.getElementById('resVol').textContent = (vol*100).toFixed(2)+'%';
   document.getElementById('resSharpe').textContent = sharpe!=null ? sharpe.toFixed(2) : '—';
-
+}
+function renderAllocation(list, w){
   const amount = parseFloat(document.getElementById('investAmount').value) || 0;
   const order = list.map((a,i)=>({a, w:w[i]})).sort((x,y)=>y.w-x.w);
 
   const listEl = document.getElementById('allocList');
   listEl.innerHTML = '';
-  order.forEach(({a,w}, i)=>{
+  order.forEach(({a,w})=>{
     const color = CAT_COLORS[a.category] || '#8993a4';
     const row = document.createElement('div');
     row.className='alloc-row';
@@ -1872,6 +2018,71 @@ function displayResults(list, w, ret, vol, sharpe){
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>`${c.label}: ${c.raw.toFixed(1)}%`}}}, cutout:'62%' }
   });
+}
+
+/* --- Ajustement manuel des poids (curseurs) --- */
+function renderManualWeightSliders(list, w){
+  const el = document.getElementById('manualWeightsSliders');
+  el.innerHTML = list.map((a,i)=>`
+    <div class="filter-group" style="margin-bottom:10px;">
+      <label class="filter-label" style="display:flex;justify-content:space-between;">
+        <span>${a.name}</span><span class="mono" id="manualWeightVal-${i}">${(w[i]*100).toFixed(1)}%</span>
+      </label>
+      <input type="range" min="0" max="100" step="0.5" value="${(w[i]*100).toFixed(1)}" data-idx="${i}" class="manual-weight-slider" oninput="onManualWeightInput(${i})" style="width:100%;">
+    </div>
+  `).join('');
+  updateManualWeightsSum();
+}
+function onManualWeightInput(i){
+  const v = document.querySelector(`.manual-weight-slider[data-idx="${i}"]`).value;
+  document.getElementById('manualWeightVal-'+i).textContent = parseFloat(v).toFixed(1)+'%';
+  updateManualWeightsSum();
+}
+function updateManualWeightsSum(){
+  const sliders = document.querySelectorAll('.manual-weight-slider');
+  let sum=0; sliders.forEach(s=> sum+=parseFloat(s.value));
+  const sumEl = document.getElementById('manualWeightsSum');
+  if(!sumEl) return;
+  sumEl.textContent = `Somme : ${sum.toFixed(1)}%` + (Math.abs(sum-100)>0.6 ? ' (sera renormalisée à 100% en appliquant)' : '');
+  sumEl.style.color = Math.abs(sum-100)<0.6 ? 'var(--teal)' : 'var(--amber)';
+}
+function getManualWeightsRaw(){
+  const sliders = [...document.querySelectorAll('.manual-weight-slider')].sort((a,b)=> parseInt(a.dataset.idx)-parseInt(b.dataset.idx));
+  return sliders.map(s=>parseFloat(s.value));
+}
+function applyManualWeights(){
+  if(!currentPortfolio) return;
+  const raw = getManualWeightsRaw();
+  const sum = raw.reduce((a,b)=>a+b,0);
+  if(sum<=0) return;
+  const w = raw.map(v=>v/sum); // renormalisation exacte à 100%
+  currentPortfolio.weightsCurrent = w;
+  const { list, mu, Sigma } = currentPortfolio;
+  const ret = vDot(w, mu);
+  const vol = Math.sqrt(Math.max(vDot(w, matVec(Sigma,w)), 1e-9));
+  const sharpe = vol>1e-6 ? ret/vol : null;
+  renderResultMetrics(ret, vol, sharpe);
+  renderAllocation(list, w);
+  w.forEach((wi,i)=>{
+    const s = document.querySelector(`.manual-weight-slider[data-idx="${i}"]`);
+    if(s){ s.value = (wi*100).toFixed(1); const lbl=document.getElementById('manualWeightVal-'+i); if(lbl) lbl.textContent=(wi*100).toFixed(1)+'%'; }
+  });
+  updateManualWeightsSum();
+  if(portfolioSimData){ portfolioSimData.weights = w; refreshPortfolioStatsAndChart(); }
+  renderMonteCarlo();
+}
+function resetToOptimalWeights(){
+  if(!currentPortfolio) return;
+  const { list, mu, Sigma, weightsOptimal } = currentPortfolio;
+  currentPortfolio.weightsCurrent = weightsOptimal.slice();
+  const ret = vDot(weightsOptimal, mu);
+  const vol = Math.sqrt(Math.max(vDot(weightsOptimal, matVec(Sigma,weightsOptimal)), 1e-9));
+  const sharpe = vol>1e-6 ? ret/vol : null;
+  renderResultMetrics(ret, vol, sharpe);
+  renderAllocation(list, weightsOptimal);
+  renderManualWeightSliders(list, weightsOptimal);
+  if(portfolioSimData){ portfolioSimData.weights = weightsOptimal.slice(); refreshPortfolioStatsAndChart(); }
+  renderMonteCarlo();
 }
 
 function displayFrontier(list, mu, Sigma, optimal){
@@ -1961,7 +2172,8 @@ function maxDrawdownFromSeries(values){
 }
 
 let portfolioHistoryChart;
-let portfolioSimData = null; // conserve les données calculées pour permettre de redessiner le graphique sans tout re-télécharger (superposition des fonds)
+let portfolioSimData = null; // conserve les données calculées pour permettre de redessiner le graphique sans tout re-télécharger (superposition des fonds, rééquilibrage, benchmark)
+let benchmarkCache = {}; // id de fonds -> {dates, closes} déjà téléchargés
 
 function bestWorstCalendarYears(dates, values){
   const byYear = {};
@@ -1986,6 +2198,44 @@ function currentDrawdown(values){
   const last = [...values].reverse().find(v=>v!=null);
   if(peak<=0 || last==null) return null;
   return (last/peak - 1)*100;
+}
+
+// Simule la valeur du portefeuille à partir de séries de prix normalisées
+// (normSeries[k][i] = prix du fonds k au temps i / prix initial), soit en
+// buy & hold (mode='none'), soit avec rééquilibrage périodique vers les
+// poids cibles (mode='annual'|'quarterly'|'monthly').
+function computePortfolioSeries(masterDates, normSeries, weights, mode){
+  const T = masterDates.length;
+  const n = weights.length;
+  if(mode === 'none' || !mode){
+    return masterDates.map((d,i)=>{
+      let sum=0, anyNull=false;
+      for(let k=0;k<n;k++){ const v=normSeries[k][i]; if(v==null){anyNull=true;break;} sum+=weights[k]*v; }
+      return anyNull ? null : (sum-1)*100;
+    });
+  }
+  // Rééquilibrage : on détient un nombre de "parts" par fonds, recalculé aux
+  // dates de rééquilibrage pour revenir aux poids cibles. normSeries[k][0]
+  // vaut 1 par construction (normalisé), donc les parts initiales = poids cibles.
+  const monthsBetween = {annual:12, quarterly:3, monthly:1}[mode] || 12;
+  let value = 1;
+  let shares = weights.slice();
+  const out = [ (value-1)*100 ];
+  let lastRebalance = new Date(masterDates[0]);
+  for(let i=1;i<T;i++){
+    let anyNull=false;
+    for(let k=0;k<n;k++){ if(normSeries[k][i]==null){ anyNull=true; break; } }
+    if(anyNull){ out.push(null); continue; }
+    value = shares.reduce((s,sh,k)=> s + sh*normSeries[k][i], 0);
+    out.push((value-1)*100);
+    const d = new Date(masterDates[i]);
+    const monthsSince = (d.getFullYear()-lastRebalance.getFullYear())*12 + (d.getMonth()-lastRebalance.getMonth());
+    if(monthsSince >= monthsBetween){
+      shares = weights.map((w,k) => (w*value)/normSeries[k][i]);
+      lastRebalance = d;
+    }
+  }
+  return out;
 }
 
 async function renderPortfolioHistory(list, weights){
@@ -2028,7 +2278,6 @@ async function renderPortfolioHistory(list, weights){
     return;
   }
 
-  // Pour chaque fonds : valeur normalisée (1 au point de départ commun), alignée sur masterDates par date la plus proche antérieure.
   function nearestValue(dates, closes, targetDate){
     let idx = -1;
     for(let i=0;i<dates.length;i++){ if(dates[i]<=targetDate) idx=i; else break; }
@@ -2043,19 +2292,31 @@ async function renderPortfolioHistory(list, weights){
     });
   });
 
-  // Valeur du portefeuille (buy-and-hold) = somme pondérée des valeurs normalisées, exprimée en % de variation depuis le point de départ commun.
-  const portfolioRatio = masterDates.map((d,i)=>{
-    let sum = 0, anyNull=false;
-    for(let k=0;k<normSeries.length;k++){
-      const v = normSeries[k][i];
-      if(v==null){ anyNull=true; break; }
-      sum += weights[k]*v;
-    }
-    return anyNull ? null : sum;
-  });
-  const portfolioValues = portfolioRatio.map(v => v!=null ? (v-1)*100 : null);
+  portfolioSimData = { masterDates, normSeries, names: ok.map(s=>s.name), weights: weights.slice(), commonStart };
 
-  portfolioSimData = { masterDates, portfolioValues, normSeries, names: ok.map(s=>s.name) };
+  // Remplit le sélecteur de benchmark (une seule fois par jeu de résultats) avec
+  // les fonds NE faisant PAS partie du portefeuille, pour éviter une comparaison contre lui-même.
+  const benchSel = document.getElementById('benchmarkSelect');
+  const currentBenchVal = benchSel.value;
+  benchSel.innerHTML = '<option value="">Sans benchmark</option>' +
+    ASSETS.filter(a=> !list.some(l=>l.id===a.id)).map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  if([...benchSel.options].some(o=>o.value===currentBenchVal)) benchSel.value = currentBenchVal;
+
+  refreshPortfolioStatsAndChart();
+}
+
+// Recalcule les statistiques + le graphique à partir des données déjà en
+// mémoire (portfolioSimData), sans re-télécharger — appelé au chargement
+// initial ET à chaque changement de mode de rééquilibrage/benchmark.
+function refreshPortfolioStatsAndChart(){
+  if(!portfolioSimData) return;
+  const { masterDates, normSeries, weights } = portfolioSimData;
+  const mode = document.getElementById('rebalanceMode').value;
+  const portfolioValues = computePortfolioSeries(masterDates, normSeries, weights, mode);
+
+  document.getElementById('portfolioHistoryModeNote').innerHTML = mode==='none'
+    ? `Simulation « buy-and-hold » : les fonds sont achetés une seule fois selon les pourcentages ci-dessus, sans réajustement ultérieur. La période commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible.`
+    : `Simulation avec <b>rééquilibrage ${{annual:'annuel',quarterly:'trimestriel',monthly:'mensuel'}[mode]}</b> : la répartition est ramenée aux pourcentages cibles à chaque échéance (ce qui implique en réalité des arbitrages, donc des frais et un impact fiscal non modélisés ici). La période commence à la date où <b>tous</b> les fonds sélectionnés ont un historique disponible.`;
 
   const statsWrap = document.getElementById('portfolioStatsTableWrap');
   const statsBody = document.getElementById('portfolioStatsTableBody');
@@ -2073,14 +2334,11 @@ async function renderPortfolioHistory(list, weights){
       const cutoff = new Date(lastDate); cutoff.setDate(cutoff.getDate() - Math.round(w.years*365.25));
       const cutoffStr = cutoff.toISOString().slice(0,10);
       const startIdx = masterDates.findIndex(d=>d>=cutoffStr);
-      if(startIdx<0) return; // pas assez d'historique simulé pour cet horizon
+      if(startIdx<0) return;
       subDates = masterDates.slice(startIdx);
       subValues = portfolioValues.slice(startIdx);
       if(subDates.length < 8) return;
     }
-    // Les fonctions de stats travaillent sur des valeurs de type "prix" (base
-    // arbitraire) : on repart de la valeur en % pour reconstruire une base 100
-    // localement, sans changer les rendements/volatilités calculés.
     const rebased = subValues.map(v=> v!=null ? 100*(1+v/100) : null);
     const c = cagrFromSeries(subDates, rebased);
     const {vol, sortino} = volAndSortinoFromSeries(rebased, 52);
@@ -2099,7 +2357,6 @@ async function renderPortfolioHistory(list, weights){
     </tr>`).join('');
   statsWrap.style.display = 'block';
 
-  // Statistiques complémentaires : perte actuelle depuis le plus haut, meilleure/pire année civile.
   const rebasedFull = portfolioValues.map(v=> v!=null ? 100*(1+v/100) : null);
   const curDD = currentDrawdown(rebasedFull);
   const {best, worst} = bestWorstCalendarYears(masterDates, rebasedFull);
@@ -2108,33 +2365,75 @@ async function renderPortfolioHistory(list, weights){
   document.getElementById('phWorstYear').textContent = worst ? `${worst.year} (${worst.ret>=0?'+':''}${worst.ret.toFixed(1)}%)` : '—';
   document.getElementById('portfolioExtraStats').style.display = 'grid';
 
+  portfolioSimData.portfolioValues = portfolioValues; // pour le graphique
   renderPortfolioHistoryChart();
 }
 
-function renderPortfolioHistoryChart(){
+async function renderPortfolioHistoryChart(){
   const wrap = document.getElementById('portfolioHistoryWrap');
-  if(!portfolioSimData){ wrap.innerHTML = '<div class="placeholder">Lancez l\'optimisation ci-dessus pour voir la simulation.</div>'; return; }
-  const {masterDates, portfolioValues, normSeries, names} = portfolioSimData;
+  if(!portfolioSimData || !portfolioSimData.portfolioValues){
+    // Le mode de rééquilibrage ou le benchmark a peut-être changé avant tout calcul initial.
+    if(portfolioSimData) return refreshPortfolioStatsAndChart();
+    wrap.innerHTML = '<div class="placeholder">Lancez l\'optimisation ci-dessus pour voir la simulation.</div>';
+    return;
+  }
+  const {masterDates, normSeries, names, portfolioValues} = portfolioSimData;
   const showComponents = document.getElementById('portfolioShowComponents').checked;
+  const benchId = document.getElementById('benchmarkSelect').value;
 
   if(typeof Chart === 'undefined'){
     wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les statistiques ci-dessus restent valables.</div>';
     return;
   }
+
+  // Benchmark optionnel : téléchargé une seule fois puis mis en cache, aligné sur les mêmes dates.
+  let benchSeries = null, benchName = null, benchError = null;
+  if(benchId){
+    const benchAsset = ASSETS.find(a=>a.id===benchId);
+    benchName = benchAsset ? benchAsset.name : benchId;
+    try{
+      if(!benchmarkCache[benchId]){
+        const idParam = benchAsset.yahooSymbol ? `symbol=${encodeURIComponent(benchAsset.yahooSymbol)}` : `isin=${encodeURIComponent(benchAsset.isin)}`;
+        const res = await fetch(`${currentBackendBase()}/api/history?${idParam}&range=max&interval=1wk`);
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const data = await res.json();
+        if(data.error || !data.closes || data.closes.length===0) throw new Error(data.error || 'aucune donnée');
+        benchmarkCache[benchId] = { dates:data.dates, closes:data.closes };
+      }
+      const bd = benchmarkCache[benchId];
+      function nearestValue(dates, closes, targetDate){
+        let idx=-1; for(let i=0;i<dates.length;i++){ if(dates[i]<=targetDate) idx=i; else break; } return idx>=0?closes[idx]:null;
+      }
+      const startIdx = bd.dates.findIndex(d=>d>=masterDates[0]);
+      const startVal = startIdx>=0 ? bd.closes[startIdx] : bd.closes[0];
+      benchSeries = masterDates.map(d=>{
+        const v = nearestValue(bd.dates, bd.closes, d);
+        return (v!=null && startVal) ? (v/startVal - 1)*100 : null;
+      });
+    }catch(err){ benchError = err.message; }
+  }
+
   wrap.innerHTML = `<div class="chart-box tall"><canvas id="portfolioHistoryCanvas"></canvas></div>
-    <div class="note" style="margin-top:8px;">Portefeuille simulé du ${masterDates[0]} à ${masterDates[masterDates.length-1]} avec les pondérations optimales ci-dessus, en variation % depuis le point de départ commun. Aucun rééquilibrage périodique n'est appliqué (achat unique au départ).</div>`;
+    <div class="note" style="margin-top:8px;">Portefeuille simulé du ${masterDates[0]} à ${masterDates[masterDates.length-1]}, en variation % depuis le point de départ commun.</div>` +
+    (benchError ? `<div class="note" style="color:var(--rose);margin-top:6px;">Benchmark « ${benchName} » indisponible : ${benchError}.</div>` : '');
 
   const colors = ['#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c','#8993a4'];
   const datasets = [{
-    label:'Portefeuille optimal', data: masterDates.map((d,i)=>({x:d,y:portfolioValues[i]})),
-    borderColor:'#2fd7b3', backgroundColor:'rgba(47,215,179,0.12)', pointRadius:0, borderWidth:2.5, fill: !showComponents, tension:0.1, spanGaps:true, order:0,
+    label:'Portefeuille', data: masterDates.map((d,i)=>({x:d,y:portfolioValues[i]})),
+    borderColor:'#2fd7b3', backgroundColor:'rgba(47,215,179,0.12)', pointRadius:0, borderWidth:2.5, fill: !showComponents && !benchSeries, tension:0.1, spanGaps:true, order:0,
   }];
+  if(benchSeries){
+    datasets.push({
+      label:benchName, data: masterDates.map((d,i)=>({x:d,y:benchSeries[i]})),
+      borderColor:'#f2b85c', backgroundColor:'transparent', pointRadius:0, borderWidth:2, borderDash:[6,3], tension:0.1, spanGaps:true, order:1,
+    });
+  }
   if(showComponents){
     normSeries.forEach((series,k)=>{
       const pctSeries = series.map(v=> v!=null ? (v-1)*100 : null);
       datasets.push({
         label:names[k], data: masterDates.map((d,i)=>({x:d,y:pctSeries[i]})),
-        borderColor:colors[k%colors.length], backgroundColor:'transparent', pointRadius:0, borderWidth:1.5, borderDash:[4,3], tension:0.1, spanGaps:true, order:1,
+        borderColor:colors[k%colors.length], backgroundColor:'transparent', pointRadius:0, borderWidth:1.5, borderDash:[4,3], tension:0.1, spanGaps:true, order:2,
       });
     });
   }
@@ -2147,7 +2446,7 @@ function renderPortfolioHistoryChart(){
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{display: showComponents, position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}},
+        legend:{display: showComponents || !!benchSeries, position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}},
         tooltip:{callbacks:{label:(c)=> `${c.dataset.label}: ${c.parsed.y!=null?(c.parsed.y>=0?'+':'')+c.parsed.y.toFixed(1)+'%':'—'}`}}
       },
       scales:{
