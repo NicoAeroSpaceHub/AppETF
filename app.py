@@ -355,8 +355,12 @@ def compute_full_metrics(symbol: str) -> dict:
     if hist.empty:
         raise ValueError(f"aucun historique renvoyé par Yahoo Finance pour {symbol}")
     closes = hist["Close"].dropna()
-    if len(closes) < 15:
-        raise ValueError(f"historique insuffisant pour {symbol} ({len(closes)} points)")
+    # Seuil aligné sur celui de window_stats (8 points) : un fonds plus jeune
+    # que 3 ans doit quand même pouvoir avoir un CAGR "depuis le début"
+    # calculé et annualisé, même sur peu de semaines — seule window_stats()
+    # décide, fenêtre par fenêtre, si elle a assez de points pour répondre.
+    if len(closes) < 8:
+        raise ValueError(f"historique insuffisant pour {symbol} ({len(closes)} points, 8 minimum)")
 
     last_date = closes.index[-1]
     out: dict = {"points": int(len(closes)), "inception_date": closes.index[0].strftime("%Y-%m-%d")}
@@ -371,12 +375,29 @@ def compute_full_metrics(symbol: str) -> dict:
         out[f"vol_{label}"] = stats["vol"]
         out[f"sortino_{label}"] = stats["sortino"]
         out[f"dd_{label}"] = stats["max_drawdown"]
-    # Alias par défaut (rétro-compatibilité avec le reste de l'app) : 3 ans.
+    # Alias par défaut (rétro-compatibilité avec le reste de l'app, filtres,
+    # tri, éligibilité à l'optimiseur) : normalement 3 ans, mais un fonds
+    # trop récent pour avoir 3 ans d'historique ne doit pas se retrouver
+    # sans AUCUNE caractéristique pour autant — on se replie alors sur la
+    # fenêtre la plus longue réellement disponible (1 an, puis depuis le
+    # début). `ret_basis`/`vol_basis` indique quelle fenêtre a été retenue,
+    # pour que l'interface puisse le signaler plutôt que de laisser croire
+    # à tort qu'il s'agit de 3 ans.
     # Rappel : "rendement annualisé" et "CAGR" désignent ici EXACTEMENT la
     # même quantité mathématique (taux de croissance annuel composé) —
     # ce n'est pas une coïncidence, ret_Xy EST un CAGR.
-    out["ret"] = out["ret_3y"]
-    out["vol"] = out["vol_3y"]
+    if out["ret_3y"] is not None:
+        out["ret"], out["ret_basis"] = out["ret_3y"], "3y"
+    elif out["ret_1y"] is not None:
+        out["ret"], out["ret_basis"] = out["ret_1y"], "1y"
+    else:
+        out["ret"], out["ret_basis"] = out["ret_max"], "max"
+    if out["vol_3y"] is not None:
+        out["vol"], out["vol_basis"] = out["vol_3y"], "3y"
+    elif out["vol_1y"] is not None:
+        out["vol"], out["vol_basis"] = out["vol_1y"], "1y"
+    else:
+        out["vol"], out["vol_basis"] = out["vol_max"], "max"
 
     # Devise native du fonds (nécessaire pour la conversion EUR du dernier cours).
     currency = None

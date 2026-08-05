@@ -661,7 +661,7 @@ ASSETS.forEach(a=>{
   // pas de TER, d'encours, de rendement ou de volatilité pré-remplis, même
   // à partir de sources publiques consultées lors de la construction de
   // cette liste — ces valeurs peuvent changer et ne sont pas vérifiées ici.
-  a.ter=null; a.fundSize=null; a.ret=null; a.vol=null; a.sharpe=null;
+  a.ter=null; a.fundSize=null; a.ret=null; a.vol=null; a.sharpe=null; a.ret_basis=null; a.vol_basis=null;
   a.ret_1y=null; a.vol_1y=null; a.ret_3y=null; a.vol_3y=null; a.ret_5y=null; a.vol_5y=null; a.ret_max=null; a.vol_max=null;
   a.sortino_1y=null; a.sortino_3y=null; a.sortino_5y=null; a.sortino_max=null;
   a.dd_1y=null; a.dd_3y=null; a.dd_5y=null; a.dd_max=null;
@@ -768,7 +768,13 @@ const COLUMN_DEFS = [
   {id:'vol_3y',       label:'Volatilité 3 ans',       group:'Risque',         default:true,  sortKey:'vol_3y',  render:a=>fmtPct(a.vol_3y,'vol')},
   {id:'vol_5y',       label:'Volatilité 5 ans',       group:'Risque',         default:false, sortKey:'vol_5y',  render:a=>fmtPct(a.vol_5y,'vol')},
   {id:'vol_max',      label:'Volatilité depuis le début', group:'Risque',     default:false, sortKey:'vol_max', render:a=>fmtPct(a.vol_max,'vol')},
-  {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',  render:a=>a.sharpe!=null?`<span class="num">${a.sharpe.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
+  {id:'sharpe',       label:'Rend./Vol. (3 ans)',     group:'Risque',         default:true,  sortKey:'sharpe',
+    render:a=>{
+      if(a.sharpe==null) return '<span class="num" style="color:var(--text-faint);">—</span>';
+      const basisLabel = {'1y':'1 an','max':'depuis le début'}[a.ret_basis];
+      const flag = basisLabel ? ` title="Fonds trop récent pour 3 ans d'historique : calculé ${basisLabel} à la place"` : '';
+      return `<span class="num"${flag}>${a.sharpe.toFixed(2)}${basisLabel?' *':''}</span>`;
+    }},
   {id:'sortino_1y',   label:'Sortino 1 an',           group:'Risque',         default:false, sortKey:'sortino_1y', render:a=>a.sortino_1y!=null?`<span class="num">${a.sortino_1y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_3y',   label:'Sortino 3 ans',          group:'Risque',         default:true,  sortKey:'sortino_3y', render:a=>a.sortino_3y!=null?`<span class="num">${a.sortino_3y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'sortino_5y',   label:'Sortino 5 ans',          group:'Risque',         default:false, sortKey:'sortino_5y', render:a=>a.sortino_5y!=null?`<span class="num">${a.sortino_5y.toFixed(2)}</span>`:'<span class="num" style="color:var(--text-faint);">—</span>'},
@@ -1379,9 +1385,15 @@ async function refreshFromYahoo(){
         a.lastError = r.error || 'réponse incomplète du backend';
         fail++; failedNames.push(a.name);
       }else{
-        a.ret = r.ret_3y!=null ? r.ret_3y : r.ret; a.vol = Math.max(r.vol_3y!=null ? r.vol_3y : r.vol, 0.05);
+        // r.ret / r.vol sont déjà le meilleur repli calculé côté backend
+        // (3 ans, sinon 1 an, sinon depuis le début) — ret_basis/vol_basis
+        // indique lequel a été retenu. Important : on ne recopie PAS cette
+        // valeur de repli dans ret_3y/vol_3y, qui doivent rester la vraie
+        // valeur à 3 ans (ou null si le fonds est trop récent).
+        a.ret = r.ret; a.vol = Math.max(r.vol, 0.05);
+        a.ret_basis = r.ret_basis || '3y'; a.vol_basis = r.vol_basis || '3y';
         a.ret_1y = r.ret_1y; a.vol_1y = r.vol_1y!=null ? Math.max(r.vol_1y,0.01) : null;
-        a.ret_3y = a.ret; a.vol_3y = a.vol;
+        a.ret_3y = r.ret_3y; a.vol_3y = r.vol_3y!=null ? Math.max(r.vol_3y,0.01) : null;
         a.ret_5y = r.ret_5y; a.vol_5y = r.vol_5y!=null ? Math.max(r.vol_5y,0.01) : null;
         a.ret_max = r.ret_max; a.vol_max = r.vol_max!=null ? Math.max(r.vol_max,0.01) : null;
         a.sortino_1y = r.sortino_1y; a.sortino_3y = r.sortino_3y; a.sortino_5y = r.sortino_5y; a.sortino_max = r.sortino_max;
@@ -1490,7 +1502,9 @@ async function selectFundCandidate(item){
   pendingFundPayload = {
     symbol: item.symbol,
     ret: okMetrics?metrics.ret:null, vol: okMetrics?metrics.vol:null,
+    ret_basis: okMetrics?metrics.ret_basis:null, vol_basis: okMetrics?metrics.vol_basis:null,
     ret_1y: okMetrics?metrics.ret_1y:null, vol_1y: okMetrics?metrics.vol_1y:null,
+    ret_3y: okMetrics?metrics.ret_3y:null, vol_3y: okMetrics?metrics.vol_3y:null,
     ret_5y: okMetrics?metrics.ret_5y:null, vol_5y: okMetrics?metrics.vol_5y:null,
     ret_max: okMetrics?metrics.ret_max:null, vol_max: okMetrics?metrics.vol_max:null,
     sortino_1y: okMetrics?metrics.sortino_1y:null, sortino_3y: okMetrics?metrics.sortino_3y:null, sortino_5y: okMetrics?metrics.sortino_5y:null, sortino_max: okMetrics?metrics.sortino_max:null,
@@ -1565,7 +1579,8 @@ function confirmAddFund(){
     id: 'custom-' + payload.symbol.replace(/[^a-zA-Z0-9]/g,'') + '-' + Date.now(),
     name, isin, category, index: name, ter, fundSize,
     ret: payload.ret, vol: payload.vol!=null ? Math.max(payload.vol, 0.05) : null,
-    ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret, vol_3y: payload.vol!=null ? Math.max(payload.vol,0.05) : null,
+    ret_1y: payload.ret_1y, vol_1y: payload.vol_1y, ret_3y: payload.ret_3y, vol_3y: payload.vol_3y,
+    ret_basis: payload.ret_basis, vol_basis: payload.vol_basis,
     ret_5y: payload.ret_5y, vol_5y: payload.vol_5y,
     ret_max: payload.ret_max, vol_max: payload.vol_max,
     sortino_1y: payload.sortino_1y, sortino_3y: payload.sortino_3y, sortino_5y: payload.sortino_5y, sortino_max: payload.sortino_max,
@@ -1787,6 +1802,12 @@ async function runOptimization(){
    9bis6. ANALYSE DE SENSIBILITÉ À LA PÉRIODE DE CALCUL (rolling window)
    ===================================================================== */
 let rollingWeightsChart, rollingPerfChart;
+function formatYearsLabel(y){
+  if(y < 1) return Math.round(y*12) + ' mois';
+  const rounded = Math.round(y*10)/10;
+  return rounded.toString().replace('.',',') + ' an' + (rounded>1?'s':'');
+}
+
 async function runRollingAnalysis(list, histories, objectiveType, param){
   const weightsPanel = document.getElementById('rollingWeightsPanel');
   const perfPanel = document.getElementById('rollingPerfPanel');
@@ -1799,17 +1820,26 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
 
   const {masterDates: fullDates} = alignSeries(histories, null, null);
   const totalYears = (new Date(fullDates[fullDates.length-1]) - new Date(fullDates[0])) / (1000*3600*24*365.25);
-  const maxLookback = Math.min(15, Math.floor(totalYears));
 
-  if(maxLookback < 1){
-    weightsWrap.innerHTML = '<div class="placeholder">Historique commun trop court entre ces fonds pour une analyse de sensibilité (moins d\'un an).</div>';
+  if(totalYears < 0.15){
+    weightsWrap.innerHTML = '<div class="placeholder">Historique commun trop court entre ces fonds pour une analyse de sensibilité.</div>';
     perfWrap.innerHTML = '';
     return;
   }
 
+  // Grille proportionnelle plutôt que "1 an, 2 ans, …" : on découpe la durée
+  // commune disponible en 10 points régulièrement espacés (ex. si 2 ans
+  // d'historique commun : 0,2 an, 0,4 an, … jusqu'à 2 ans). Ça garantit
+  // toujours ~10 points, que l'historique commun fasse 6 mois ou 20 ans —
+  // contrairement à un pas fixe d'1 an qui donnerait 0 ou 1 point sur un
+  // historique court.
+  const nPoints = Math.min(10, Math.max(4, Math.round(totalYears*4)));
+  const lookbacks = [];
+  for(let i=1;i<=nPoints;i++) lookbacks.push(totalYears * i / nPoints);
+
   const rows = [];
-  for(let L=1; L<=maxLookback; L++){
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - Math.round(L*365.25));
+  for(const yearsBack of lookbacks){
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - Math.round(yearsBack*365.25));
     const sinceStr = cutoff.toISOString().slice(0,10);
     const {aligned} = alignSeries(histories, sinceStr, null);
     const stats = muSigmaFromAlignedPrices(aligned, 52);
@@ -1819,16 +1849,16 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
     const w = softmax(best.x);
     const ret = vDot(w, stats.mu);
     const vol = Math.sqrt(Math.max(vDot(w, matVec(stats.Sigma,w)), 1e-9));
-    rows.push({ years:L, weights:w, ret, vol, sharpe: vol>1e-6?ret/vol:null });
+    rows.push({ years:yearsBack, weights:w, ret, vol, sharpe: vol>1e-6?ret/vol:null });
   }
 
   if(rows.length < 2){
-    weightsWrap.innerHTML = '<div class="placeholder">Pas assez de durées différentes calculables pour tracer cette analyse.</div>';
+    weightsWrap.innerHTML = '<div class="placeholder">Pas assez de durées différentes calculables pour tracer cette analyse (historique commun trop court ou trop irrégulier).</div>';
     perfWrap.innerHTML = '';
     return;
   }
 
-  document.getElementById('rollingWeightsNote').textContent = `Pour chaque durée d'historique testée (1 à ${rows[rows.length-1].years} ans avant aujourd'hui), l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible au nombre d'années de cours pris en compte.`;
+  document.getElementById('rollingWeightsNote').textContent = `L'historique commun disponible (${formatYearsLabel(totalYears)}) est découpé en ${rows.length} durées régulièrement espacées. Pour chacune, l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible à la quantité de cours pris en compte.`;
 
   if(typeof Chart === 'undefined'){
     weightsWrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée).</div>';
@@ -1838,7 +1868,7 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
 
   const colors = ['#2fd7b3','#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c'];
   // Affichage de gauche (passé le plus lointain pris en compte) à droite
-  // (aujourd'hui) : on inverse l'ordre de calcul (1 an → maxLookback ans).
+  // (aujourd'hui) : on inverse l'ordre de calcul (le plus court → le plus long).
   const displayRows = [...rows].reverse();
   weightsWrap.innerHTML = '<div class="chart-box tall"><canvas id="rollingWeightsCanvas"></canvas></div>';
   const wCtx = document.getElementById('rollingWeightsCanvas');
@@ -1846,7 +1876,7 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   rollingWeightsChart = new Chart(wCtx, {
     type:'line',
     data:{
-      labels: displayRows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      labels: displayRows.map(r=>formatYearsLabel(r.years)),
       datasets: list.map((a,k)=>({
         label: a.name,
         data: displayRows.map(r=>r.weights[k]*100),
@@ -1871,7 +1901,7 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   rollingPerfChart = new Chart(pCtx, {
     type:'line',
     data:{
-      labels: displayRows.map(r=>r.years+' an'+(r.years>1?'s':'')),
+      labels: displayRows.map(r=>formatYearsLabel(r.years)),
       datasets:[
         { label:'Rendement attendu (%)', data: displayRows.map(r=>r.ret*100), borderColor:'#2fd7b3', backgroundColor:'#2fd7b3', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
         { label:'Volatilité attendue (%)', data: displayRows.map(r=>r.vol*100), borderColor:'#f2b85c', backgroundColor:'#f2b85c', yAxisID:'y', pointRadius:3, borderWidth:2, tension:0.15 },
@@ -2068,6 +2098,7 @@ function applyManualWeights(){
     if(s){ s.value = (wi*100).toFixed(1); const lbl=document.getElementById('manualWeightVal-'+i); if(lbl) lbl.textContent=(wi*100).toFixed(1)+'%'; }
   });
   updateManualWeightsSum();
+  updateFrontierCurrentPoint();
   if(portfolioSimData){ portfolioSimData.weights = w; refreshPortfolioStatsAndChart(); }
   renderMonteCarlo();
 }
@@ -2081,6 +2112,7 @@ function resetToOptimalWeights(){
   renderResultMetrics(ret, vol, sharpe);
   renderAllocation(list, weightsOptimal);
   renderManualWeightSliders(list, weightsOptimal);
+  updateFrontierCurrentPoint();
   if(portfolioSimData){ portfolioSimData.weights = weightsOptimal.slice(); refreshPortfolioStatsAndChart(); }
   renderMonteCarlo();
 }
@@ -2109,6 +2141,7 @@ function displayFrontier(list, mu, Sigma, optimal){
         { label:'Portefeuilles simulés', data:cloud, backgroundColor:'rgba(124,143,255,0.18)', pointRadius:3, pointHoverRadius:3 },
         { label:'ETF individuels', data:assetPoints, backgroundColor:'#f2b85c', pointRadius:6, pointHoverRadius:8 },
         { label:'Portefeuille optimal', data:[{x:optimal.vol*100, y:optimal.ret*100, label:'Optimum CMA-ES'}], backgroundColor:'#2fd7b3', pointRadius:9, pointHoverRadius:11, borderColor:'#fff', borderWidth:2 },
+        { label:'Poids ajustés (manuel)', data:[], backgroundColor:'#f2617a', pointRadius:9, pointHoverRadius:11, borderColor:'#fff', borderWidth:2 },
       ]
     },
     options:{
@@ -2124,6 +2157,24 @@ function displayFrontier(list, mu, Sigma, optimal){
       }
     }
   });
+}
+
+// Met à jour (ou efface) le point "poids ajustés manuellement" sur le
+// graphique de frontière, sans reconstruire tout le nuage de points.
+function updateFrontierCurrentPoint(){
+  if(!frontierChart || !currentPortfolio) return;
+  const { mu, Sigma, weightsCurrent, weightsOptimal } = currentPortfolio;
+  const differsFromOptimal = weightsCurrent.some((w,i)=> Math.abs(w-weightsOptimal[i]) > 0.005);
+  const ds = frontierChart.data.datasets[3];
+  if(!ds) return;
+  if(!differsFromOptimal){
+    ds.data = [];
+  }else{
+    const ret = vDot(weightsCurrent, mu);
+    const vol = Math.sqrt(Math.max(vDot(weightsCurrent, matVec(Sigma,weightsCurrent)), 1e-9));
+    ds.data = [{ x:vol*100, y:ret*100, label:'Poids ajustés manuellement' }];
+  }
+  frontierChart.update();
 }
 
 /* =====================================================================
