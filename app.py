@@ -428,14 +428,33 @@ def compute_full_metrics(symbol: str) -> dict:
     else:
         out["last_price_eur"] = out["last_price"]
 
-    fund_info = fetch_fund_info(tkr)
-    out["ter"] = fund_info["ter"]
-    out["fund_size_million"] = fund_info["fund_size_million"]
-    out["quote_type"] = fund_info["quote_type"]
-    out["fund_name"] = fund_info["fund_name"]
-    out["category_hint"] = fund_info["category_hint"]
+    # TER, encours, type d'instrument, catégorie : best-effort via tkr.info,
+    # un appel Yahoo notoirement plus lent et moins fiable que l'historique
+    # de cours. Isolé dans son propre try/except : s'il échoue (timeout,
+    # rate limit, symbole non couvert par `.info`...), on ne perd PAS pour
+    # autant le CAGR/volatilité/Sortino/dernier cours déjà calculés
+    # ci-dessus à partir des cours réels — seuls ces champs-là restent None.
+    try:
+        fund_info = fetch_fund_info(tkr)
+        out["ter"] = fund_info["ter"]
+        out["fund_size_million"] = fund_info["fund_size_million"]
+        out["quote_type"] = fund_info["quote_type"]
+        out["fund_name"] = fund_info["fund_name"]
+        out["category_hint"] = fund_info["category_hint"]
+    except Exception:
+        out["ter"] = None
+        out["fund_size_million"] = None
+        out["quote_type"] = None
+        out["fund_name"] = None
+        out["category_hint"] = None
 
-    dist_policy, dist_basis = detect_distribution_policy(tkr, symbol)
+    # Idem pour la détection capitalisant/distribuant (lecture de
+    # l'historique des dividendes) : isolée pour ne jamais faire échouer
+    # tout le reste si elle échoue seule.
+    try:
+        dist_policy, dist_basis = detect_distribution_policy(tkr, symbol)
+    except Exception:
+        dist_policy, dist_basis = None, None
     out["dist_policy"] = dist_policy
     out["dist_basis"] = dist_basis
     return out
