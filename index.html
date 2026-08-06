@@ -255,6 +255,21 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 }
 
 .h-scroll-slider{width:100%;margin-top:6px;display:none;}
+
+/* ---------- Matrice de corrélation (heatmap) ---------- */
+.corr-table{border-collapse:collapse;font-size:11.5px;}
+.corr-table th{padding:6px 8px;color:var(--text-faint);font-weight:500;text-align:center;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;}
+.corr-table th.corr-rowhead{text-align:right;max-width:140px;}
+.corr-table td{padding:0;text-align:center;}
+.corr-cell{display:flex;align-items:center;justify-content:center;width:56px;height:32px;font-family:'IBM Plex Mono',monospace;font-size:11px;margin:1px;border-radius:4px;}
+
+/* ---------- Contribution au risque (barres) ---------- */
+.risk-bar-row{display:grid;grid-template-columns:140px 1fr 50px 50px;align-items:center;gap:10px;font-size:12.5px;margin-bottom:8px;}
+.risk-bar-track{position:relative;height:16px;background:var(--bg-card);border-radius:4px;overflow:hidden;}
+.risk-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:4px;}
+.risk-bar-fill.weight{background:rgba(124,143,255,0.35);}
+.risk-bar-fill.risk{background:var(--amber);opacity:0.85;}
+
 .h-scroll-slider.visible{display:block;}
 
 /* ---------- Cartes ETF (remplacent le tableau sur petit écran) ----------
@@ -550,9 +565,62 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
       </div>
     </div>
 
+    <div class="panel" id="riskAnalysisPanel" style="display:none;">
+      <div class="panel-title">Analyse du risque du portefeuille</div>
+
+      <div style="margin-bottom:20px;">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:4px;">Matrice de corrélation</div>
+        <div class="note" style="margin-bottom:10px;">Calculée à partir des cours réels sur la même période que l'optimisation. Deux fonds très corrélés (proche de 1, rouge) apportent peu de diversification l'un par rapport à l'autre, même s'ils portent des noms différents.</div>
+        <div class="table-scroll" id="corrMatrixWrap"></div>
+      </div>
+
+      <div style="margin-bottom:20px;padding-top:16px;border-top:1px solid var(--border-soft);">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:4px;">Contribution au risque par fonds</div>
+        <div class="note" style="margin-bottom:10px;">Différent du poids en capital : un fonds à 20% du portefeuille peut représenter davantage (ou moins) de 20% de la volatilité totale, selon sa propre volatilité et sa corrélation aux autres.</div>
+        <div id="riskContribWrap"></div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:20px;padding-top:16px;border-top:1px solid var(--border-soft);">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:12.5px;font-weight:600;margin-bottom:8px;">Diversification effective</div>
+          <div class="metric-card">
+            <div class="label">Équivaut à environ</div>
+            <div class="value teal" id="diversificationScore">—</div>
+            <div class="note" style="margin-top:6px;margin-bottom:0;" id="diversificationNote"></div>
+          </div>
+        </div>
+        <div style="flex:2;min-width:280px;">
+          <div style="font-size:12.5px;font-weight:600;margin-bottom:8px;">VaR / CVaR à 1 an (hypothèse : rendements normaux)</div>
+          <div class="results-grid" style="grid-template-columns:1fr 1fr;">
+            <div class="metric-card">
+              <div class="label">VaR 95% — perte plancher dans les 5% pires cas</div>
+              <div class="value" style="color:var(--rose);" id="varValue">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="label">CVaR 95% — perte moyenne dans les 5% pires cas</div>
+              <div class="value" style="color:var(--rose);" id="cvarValue">—</div>
+            </div>
+          </div>
+          <div class="note" style="margin-top:8px;">Calcul analytique supposant des rendements suivant une loi normale — une simplification qui <b>sous-estime</b> généralement le risque réel (krachs, queues de distribution épaisses). À prendre comme un ordre de grandeur, pas une garantie.</div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="frontierPanel" style="display:none;">
       <div class="panel-title">Nuage de portefeuilles &amp; frontière efficiente (indicatif)</div>
       <div class="chart-box tall"><canvas id="frontierScatter"></canvas></div>
+    </div>
+
+    <div class="panel" id="rollingRiskPanel" style="display:none;">
+      <div class="panel-title">Volatilité et drawdown glissants dans le temps</div>
+      <div class="note" style="margin-bottom:10px;">Contrairement à l'analyse de sensibilité (qui varie la <em>durée</em> d'historique utilisée), ce graphique montre comment la volatilité et la perte depuis le plus haut du portefeuille simulé ont réellement évolué <em>calendairement</em>, mois par mois, avec les poids actuels.</div>
+      <div id="rollingRiskWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir ce graphique.</div></div>
+    </div>
+
+    <div class="panel" id="crisisPanel" style="display:none;">
+      <div class="panel-title">Scénarios de crise (historique réel)</div>
+      <div class="note" style="margin-bottom:10px;">Applique à l'allocation actuelle les rendements réels des fonds sélectionnés pendant trois périodes de crise connues. Un fonds qui n'existait pas encore à l'époque est exclu de ce scénario précis (signalé le cas échéant) — le résultat est alors partiel, pas un vrai historique du portefeuille complet.</div>
+      <div id="crisisWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir ces scénarios.</div></div>
     </div>
 
     <div class="panel" id="portfolioHistoryPanel" style="display:none;">
@@ -615,18 +683,54 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
         <label style="font-size:12.5px;color:var(--text-dim);">Versement mensuel</label>
         <input type="number" class="search-input" id="mcMonthly" style="width:100px;" value="0" min="0" step="50" onchange="renderMonteCarlo()">
       </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-bottom:10px;">
+        <input type="checkbox" class="chk" id="mcPeaOver5y" checked onchange="renderMonteCarlo()">
+        PEA ouvert depuis plus de 5 ans à la fin de l'horizon (17,2% de prélèvements sociaux uniquement sur le gain) — sinon un retrait clôture le PEA et le gain est taxé au flat tax de 30%
+      </label>
       <div id="monteCarloWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette projection.</div></div>
       <div class="results-grid" id="mcStats" style="display:none;margin-top:14px;">
-        <div class="metric-card"><div class="label">Scénario défavorable (10e percentile)</div><div class="value" style="color:var(--rose);" id="mcP10">—</div></div>
-        <div class="metric-card"><div class="label">Scénario médian</div><div class="value teal" id="mcP50">—</div></div>
-        <div class="metric-card"><div class="label">Scénario favorable (90e percentile)</div><div class="value indigo" id="mcP90">—</div></div>
+        <div class="metric-card"><div class="label">Scénario défavorable (10e percentile), brut</div><div class="value" style="color:var(--rose);" id="mcP10">—</div></div>
+        <div class="metric-card"><div class="label">Scénario médian, brut</div><div class="value teal" id="mcP50">—</div></div>
+        <div class="metric-card"><div class="label">Scénario favorable (90e percentile), brut</div><div class="value indigo" id="mcP90">—</div></div>
+        <div class="metric-card"><div class="label">Défavorable, net d'impôts <span id="mcTaxLabel10"></span></div><div class="value" style="color:var(--rose);opacity:0.75;" id="mcP10Net">—</div></div>
+        <div class="metric-card"><div class="label">Médian, net d'impôts <span id="mcTaxLabel50"></span></div><div class="value teal" style="opacity:0.75;" id="mcP50Net">—</div></div>
+        <div class="metric-card"><div class="label">Favorable, net d'impôts <span id="mcTaxLabel90"></span></div><div class="value indigo" style="opacity:0.75;" id="mcP90Net">—</div></div>
+      </div>
+      <div class="note" style="margin-top:10px;" id="mcTaxNote"></div>
+    </div>
+
+    <div class="panel" id="withdrawalPanel" style="display:none;">
+      <div class="panel-title">Simulation de phase de retrait</div>
+      <div class="note" style="margin-bottom:10px;">Au lieu d'accumuler, simule des retraits réguliers sur le capital une fois la période d'épargne terminée, et calcule la probabilité de ne pas épuiser le capital avant la fin de la durée choisie (approche façon « règle des 4% »). Basé sur le rendement/volatilité du portefeuille actuellement affiché ci-dessus.</div>
+      <div class="range-row" style="gap:8px;margin-bottom:10px;">
+        <label style="font-size:12.5px;color:var(--text-dim);">Capital de départ</label>
+        <input type="number" class="search-input" id="wdCapital" style="width:120px;" value="300000" min="0" step="5000" onchange="renderWithdrawalSim()">
+        <label style="font-size:12.5px;color:var(--text-dim);">Retrait annuel</label>
+        <input type="number" class="search-input" id="wdAnnual" style="width:110px;" value="12000" min="0" step="500" onchange="renderWithdrawalSim()">
+        <label style="font-size:12.5px;color:var(--text-dim);">Durée de retraite</label>
+        <select class="search-input" id="wdYears" style="width:auto;" onchange="renderWithdrawalSim()">
+          <option value="20">20 ans</option>
+          <option value="25">25 ans</option>
+          <option value="30" selected>30 ans</option>
+          <option value="35">35 ans</option>
+          <option value="40">40 ans</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-bottom:10px;">
+        <input type="checkbox" class="chk" id="wdInflation" checked onchange="renderWithdrawalSim()"> Retrait annuel revalorisé avec une inflation supposée à 2%/an (pouvoir d'achat constant)
+      </label>
+      <div id="withdrawalWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette simulation.</div></div>
+      <div class="results-grid" id="wdStats" style="display:none;margin-top:14px;">
+        <div class="metric-card"><div class="label">Probabilité de ne pas épuiser le capital</div><div class="value teal" id="wdSuccessRate">—</div></div>
+        <div class="metric-card"><div class="label">Capital médian restant au terme</div><div class="value indigo" id="wdMedianEnd">—</div></div>
+        <div class="metric-card"><div class="label">Retrait total sur la période (avant ajustement inflation)</div><div class="value" id="wdTotalWithdrawn">—</div></div>
       </div>
     </div>
 
   </div>
 
   <div class="disclaimer">
-    <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement. La liste des ETF (nom, ISIN, indice suivi) provient d'une sélection publique de fonds communément proposés sur le PEA, mais <b>aucune donnée chiffrée n'est pré-remplie</b> : TER, encours, dernier cours, rendement, volatilité, CAGR, Sortino, Max Drawdown et politique de distribution affichent « — » tant qu'ils n'ont pas été récupérés en direct via le bouton « Actualiser depuis le backend ». Ce bouton interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer ces valeurs à partir des cours réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. La détection capitalisant/distribuant est déduite du nom du fonds et de l'historique réel des dividendes versés : fiable dans la plupart des cas mais pas infaillible, en particulier pour un fonds distribuant très récemment lancé. En cas d'échec de l'actualisation, aucune valeur n'est affichée plutôt qu'une estimation invérifiée (badge « Estimé » avec la raison de l'échec au survol). La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
+    <b>Avertissement.</b> Cet outil est fourni à titre pédagogique et informatif uniquement, ce n'est pas un conseil en investissement, ni fiscal, ni de retraite. La liste des ETF (nom, ISIN, indice suivi) provient d'une sélection publique de fonds communément proposés sur le PEA, mais <b>aucune donnée chiffrée n'est pré-remplie</b> : TER, encours, dernier cours, rendement, volatilité, CAGR, Sortino, Max Drawdown et politique de distribution affichent « — » tant qu'ils n'ont pas été récupérés en direct via le bouton « Actualiser depuis le backend ». Ce bouton interroge un petit serveur Python fourni séparément (dossier <code>backend/</code>, à lancer en local avec <code>uvicorn</code>) qui utilise la librairie <code>yfinance</code> pour calculer ces valeurs à partir des cours réels — sans garantie de disponibilité, d'exactitude ou de continuité de service, Yahoo Finance pouvant modifier ses points d'accès sans préavis. La détection capitalisant/distribuant est déduite du nom du fonds et de l'historique réel des dividendes versés : fiable dans la plupart des cas mais pas infaillible, en particulier pour un fonds distribuant très récemment lancé. En cas d'échec de l'actualisation, aucune valeur n'est affichée plutôt qu'une estimation invérifiée (badge « Estimé » avec la raison de l'échec au survol). La simulation fiscale PEA est une approximation des règles en vigueur (17,2% de prélèvements sociaux après 5 ans, flat tax 30% avant) qui ne tient pas compte de votre situation personnelle (autres revenus, options d'imposition au barème, changements réglementaires futurs) — vérifiez toujours votre cas auprès d'un professionnel. La disponibilité effective de chaque ETF sur Trade Republic peut évoluer : vérifiez toujours l'éligibilité PEA, la politique de distribution et les documents d'informations clés (DIC) de l'émetteur avant tout investissement. Les performances passées ne préjugent pas des performances futures.
     <div class="footer-links"><span>Trade Republic — instruments éligibles PEA</span><span>Sources : fiches ETF des émetteurs (Amundi, iShares, BNP Paribas Easy)</span></div>
   </div>
 
@@ -1631,11 +1735,15 @@ let currentPortfolio = null; // { list, mu, Sigma, weightsOptimal, weightsCurren
 
 function resetResults(){
   document.getElementById('resultsPanel').style.display='none';
+  document.getElementById('riskAnalysisPanel').style.display='none';
   document.getElementById('frontierPanel').style.display='none';
+  document.getElementById('rollingRiskPanel').style.display='none';
+  document.getElementById('crisisPanel').style.display='none';
   document.getElementById('portfolioHistoryPanel').style.display='none';
   document.getElementById('rollingWeightsPanel').style.display='none';
   document.getElementById('rollingPerfPanel').style.display='none';
   document.getElementById('monteCarloPanel').style.display='none';
+  document.getElementById('withdrawalPanel').style.display='none';
   document.getElementById('optNote').textContent='';
   portfolioSimData = null;
   currentPortfolio = null;
@@ -1785,9 +1893,13 @@ async function runOptimization(){
 
     displayResults(okList, w, ret, vol, sharpe);
     displayFrontier(okList, mu, Sigma, {vol, ret});
-    currentPortfolio = { list: okList, mu, Sigma, weightsOptimal: w, weightsCurrent: w };
+    currentPortfolio = { list: okList, mu, Sigma, weightsOptimal: w, weightsCurrent: w, histories: ok };
     renderPortfolioHistory(okList, w); // simulation depuis l'origine de chaque fonds (indépendant de la fenêtre choisie ci-dessus)
     renderMonteCarlo();
+    renderWithdrawalSim();
+    renderRiskAnalysis();
+    renderCrisisScenarios();
+    renderEfficientFrontierCurve(okList, mu, Sigma, state.objective, param);
 
     note.style.color = 'var(--text-dim)';
     note.textContent = `Convergence CMA-ES obtenue sur ${okList.length} actifs (${stats.n_obs} semaines de cours communes, période : ${window.label}).` + (failed.length ? ` ${failed.map(f=>f.name).join(', ')} exclu${failed.length>1?'s':''} du calcul (historique indisponible).` : '');
@@ -2028,6 +2140,26 @@ function renderMonteCarlo(){
   document.getElementById('mcP10').textContent = Math.round(final.p10).toLocaleString('fr-FR')+' €';
   document.getElementById('mcP50').textContent = Math.round(final.p50).toLocaleString('fr-FR')+' €';
   document.getElementById('mcP90').textContent = Math.round(final.p90).toLocaleString('fr-FR')+' €';
+
+  // --- Fiscalité PEA (approximation) ---
+  // ≥ 5 ans : seuls 17,2% de prélèvements sociaux sur le gain, le capital
+  //   reste disponible sans clôturer le plan.
+  // < 5 ans : un retrait clôture le PEA, gain taxé au flat tax de 30%
+  //   (12,8% d'impôt sur le revenu + 17,2% de prélèvements sociaux).
+  const over5y = document.getElementById('mcPeaOver5y').checked;
+  const taxRate = over5y ? 0.172 : 0.30;
+  const taxLabel = over5y ? '(17,2%)' : '(flat tax 30%)';
+  function netOfTax(grossFinal){
+    const gain = Math.max(0, grossFinal - totalInvested);
+    return grossFinal - gain*taxRate;
+  }
+  document.getElementById('mcP10Net').textContent = Math.round(netOfTax(final.p10)).toLocaleString('fr-FR')+' €';
+  document.getElementById('mcP50Net').textContent = Math.round(netOfTax(final.p50)).toLocaleString('fr-FR')+' €';
+  document.getElementById('mcP90Net').textContent = Math.round(netOfTax(final.p90)).toLocaleString('fr-FR')+' €';
+  ['10','50','90'].forEach(p=> document.getElementById('mcTaxLabel'+p).textContent = taxLabel);
+  document.getElementById('mcTaxNote').textContent = over5y
+    ? "Hypothèse : le PEA a plus de 5 ans à la date du retrait — seuls les 17,2% de prélèvements sociaux s'appliquent sur le gain (capital + gain restent disponibles, pas de clôture obligatoire). Approximation : ne tient pas compte d'une éventuelle évolution de la réglementation ni de votre situation personnelle."
+    : "Hypothèse : le PEA a moins de 5 ans à la date du retrait — un retrait clôture le plan et le gain est taxé au flat tax de 30% (12,8% d'impôt + 17,2% de prélèvements sociaux), sauf option pour le barème progressif de l'impôt sur le revenu (non modélisée ici).";
   document.getElementById('mcStats').style.display = 'grid';
 
   const wrap = document.getElementById('monteCarloWrap');
@@ -2064,6 +2196,100 @@ function renderMonteCarlo(){
       scales:{
         x:{type:'linear', min:0, max:years, grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, stepSize: years<=12 ? 1 : Math.ceil(years/12), callback:(v)=>Math.round(v)+' an'+(Math.round(v)>1?'s':'')}, title:{display:true,text:'Horizon',color:'#5c6675'}},
         y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=>Math.round(v).toLocaleString('fr-FR')+' €'}, title:{display:true, text:'Valeur du portefeuille (€)', color:'#5c6675'}}
+      }
+    }
+  });
+}
+
+/* =====================================================================
+   9bis8. SIMULATION DE PHASE DE RETRAIT (façon "règle des 4%")
+   ===================================================================== */
+let withdrawalChart;
+function renderWithdrawalSim(){
+  const panel = document.getElementById('withdrawalPanel');
+  if(!currentPortfolio){ panel.style.display='none'; return; }
+  panel.style.display = 'block';
+
+  const { mu, Sigma, weightsCurrent } = currentPortfolio;
+  const ret = vDot(weightsCurrent, mu);
+  const vol = Math.sqrt(Math.max(vDot(weightsCurrent, matVec(Sigma,weightsCurrent)), 1e-9));
+
+  const capital0 = Math.max(0, parseFloat(document.getElementById('wdCapital').value) || 0);
+  const annualWithdraw0 = Math.max(0, parseFloat(document.getElementById('wdAnnual').value) || 0);
+  const years = parseInt(document.getElementById('wdYears').value, 10) || 30;
+  const withInflation = document.getElementById('wdInflation').checked;
+  const inflation = 0.02;
+
+  const stepsPerYear = 12;
+  const totalSteps = years*stepsPerYear;
+  const dt = 1/stepsPerYear;
+  const driftStepLog = (Math.log(1+ret) - 0.5*vol*vol)*dt;
+  const sigmaStep = vol*Math.sqrt(dt);
+  const nSims = 1000;
+
+  let successCount = 0;
+  const finalValues = [];
+  const allPaths = [];
+  for(let s=0;s<nSims;s++){
+    let value = capital0;
+    let depleted = false;
+    const path = [value];
+    for(let t=1;t<=totalSteps;t++){
+      const growth = Math.exp(driftStepLog + sigmaStep*randn());
+      value = value*growth;
+      // retrait mensuel = 1/12 du retrait annuel, revalorisé avec l'inflation si activé
+      const yearIndex = Math.floor((t-1)/stepsPerYear);
+      const withdrawAnnual = withInflation ? annualWithdraw0*Math.pow(1+inflation, yearIndex) : annualWithdraw0;
+      value -= withdrawAnnual/stepsPerYear;
+      if(value <= 0){ value = 0; depleted = true; }
+      path.push(value);
+    }
+    if(!depleted) successCount++;
+    finalValues.push(value);
+    allPaths.push(path);
+  }
+  const successRate = successCount/nSims;
+  finalValues.sort((a,b)=>a-b);
+  const medianEnd = finalValues[Math.floor(finalValues.length/2)];
+
+  // Total retiré (avant revalorisation inflation, simple estimation nominale)
+  let totalWithdrawn = 0;
+  for(let y=0;y<years;y++){ totalWithdrawn += withInflation ? annualWithdraw0*Math.pow(1+inflation,y) : annualWithdraw0; }
+
+  document.getElementById('wdSuccessRate').textContent = (successRate*100).toFixed(0)+'%';
+  document.getElementById('wdSuccessRate').style.color = successRate>=0.9 ? 'var(--teal)' : (successRate>=0.7 ? 'var(--amber)' : 'var(--rose)');
+  document.getElementById('wdMedianEnd').textContent = Math.round(medianEnd).toLocaleString('fr-FR')+' €';
+  document.getElementById('wdTotalWithdrawn').textContent = Math.round(totalWithdrawn).toLocaleString('fr-FR')+' €';
+  document.getElementById('wdStats').style.display = 'grid';
+
+  const wrap = document.getElementById('withdrawalWrap');
+  if(typeof Chart === 'undefined'){
+    wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée) — les chiffres ci-dessus restent valables.</div>';
+    return;
+  }
+  const percentilesByStep = [];
+  for(let t=0;t<=totalSteps;t++){
+    const vals = allPaths.map(p=>p[t]).sort((a,b)=>a-b);
+    const pick = (q)=> vals[Math.min(vals.length-1, Math.floor(q*vals.length))];
+    percentilesByStep.push({ p10:pick(0.10), p50:pick(0.50), p90:pick(0.90) });
+  }
+  wrap.innerHTML = '<div class="chart-box tall"><canvas id="withdrawalCanvas"></canvas></div>' +
+    `<div class="note" style="margin-top:8px;">${nSims.toLocaleString('fr-FR')} trajectoires simulées avec retrait ${withInflation?'revalorisé chaque année avec 2% d\'inflation':'fixe'}. Une trajectoire est un "échec" si le capital atteint 0 avant la fin des ${years} ans.</div>`;
+  const ctx = document.getElementById('withdrawalCanvas');
+  if(withdrawalChart) withdrawalChart.destroy();
+  withdrawalChart = new Chart(ctx, {
+    type:'line',
+    data:{ datasets:[
+      { label:'P10', data:percentilesByStep.map((p,t)=>({x:t/stepsPerYear,y:p.p10})), borderColor:'transparent', pointRadius:0, fill:false },
+      { label:'P10–P90', data:percentilesByStep.map((p,t)=>({x:t/stepsPerYear,y:p.p90})), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.15)', pointRadius:0, fill:'-1' },
+      { label:'Médiane', data:percentilesByStep.map((p,t)=>({x:t/stepsPerYear,y:p.p50})), borderColor:'#2fd7b3', borderWidth:2, pointRadius:0, fill:false },
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=> c.dataset.label==='Médiane' ? `Médiane : ${Math.round(c.parsed.y).toLocaleString('fr-FR')} €` : null}} },
+      scales:{
+        x:{type:'linear', min:0, max:years, grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, stepSize: years<=15?1:Math.ceil(years/15), callback:(v)=>Math.round(v)+' an'+(Math.round(v)>1?'s':'')}, title:{display:true,text:'Années de retraite',color:'#5c6675'}},
+        y:{min:0, grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=>Math.round(v).toLocaleString('fr-FR')+' €'}, title:{display:true, text:'Capital restant (€)', color:'#5c6675'}}
       }
     }
   });
@@ -2160,8 +2386,11 @@ function applyManualWeights(){
   });
   updateManualWeightsSum();
   updateFrontierCurrentPoint();
+  renderRiskAnalysis();
+  renderCrisisScenarios();
   if(portfolioSimData){ portfolioSimData.weights = w; refreshPortfolioStatsAndChart(); }
   renderMonteCarlo();
+  renderWithdrawalSim();
 }
 function resetToOptimalWeights(){
   if(!currentPortfolio) return;
@@ -2174,8 +2403,11 @@ function resetToOptimalWeights(){
   renderAllocation(list, weightsOptimal);
   renderManualWeightSliders(list, weightsOptimal);
   updateFrontierCurrentPoint();
+  renderRiskAnalysis();
+  renderCrisisScenarios();
   if(portfolioSimData){ portfolioSimData.weights = weightsOptimal.slice(); refreshPortfolioStatsAndChart(); }
   renderMonteCarlo();
+  renderWithdrawalSim();
 }
 
 function displayFrontier(list, mu, Sigma, optimal){
@@ -2236,6 +2468,158 @@ function updateFrontierCurrentPoint(){
     ds.data = [{ x:vol*100, y:ret*100, label:'Poids ajustés manuellement' }];
   }
   frontierChart.update();
+}
+
+/* =====================================================================
+   9bis1. ANALYSE DU RISQUE — corrélation, contribution, diversification, VaR/CVaR
+   ===================================================================== */
+function corrColor(c){
+  // c dans [-1,1] : va de teal (faible/négative, bonne diversification) à
+  // rose (proche de 1, redondance) en passant par la couleur de fond.
+  const t = Math.max(0, Math.min(1, (c+1)/2));
+  const teal=[47,215,179], rose=[242,97,122];
+  const r = Math.round(teal[0]+(rose[0]-teal[0])*t);
+  const g = Math.round(teal[1]+(rose[1]-teal[1])*t);
+  const b = Math.round(teal[2]+(rose[2]-teal[2])*t);
+  return `rgba(${r},${g},${b},0.55)`;
+}
+
+function renderRiskAnalysis(){
+  const panel = document.getElementById('riskAnalysisPanel');
+  if(!currentPortfolio){ panel.style.display='none'; return; }
+  panel.style.display = 'block';
+  const { list, mu, Sigma, weightsCurrent } = currentPortfolio;
+  const n = list.length;
+
+  // --- Matrice de corrélation ---
+  const vols = Sigma.map((row,i)=>Math.sqrt(Math.max(row[i],1e-12)));
+  const corr = Sigma.map((row,i)=> row.map((v,j)=> v/(vols[i]*vols[j])));
+  const shortNames = list.map(a=> a.name.length>16 ? a.name.slice(0,14)+'…' : a.name);
+  let html = '<table class="corr-table"><thead><tr><th></th>' + shortNames.map((nm,k)=>`<th title="${list[k].name}">${nm}</th>`).join('') + '</tr></thead><tbody>';
+  for(let i=0;i<n;i++){
+    html += `<tr><th class="corr-rowhead" title="${list[i].name}">${shortNames[i]}</th>`;
+    for(let j=0;j<n;j++){
+      const c = corr[i][j];
+      html += `<td><div class="corr-cell" style="background:${corrColor(c)};" title="${list[i].name} × ${list[j].name} : ${c.toFixed(2)}">${c.toFixed(2)}</div></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('corrMatrixWrap').innerHTML = html;
+
+  // --- Contribution au risque ---
+  const Sw = matVec(Sigma, weightsCurrent);
+  const portVar = Math.max(vDot(weightsCurrent, Sw), 1e-12);
+  const portVol = Math.sqrt(portVar);
+  const riskContrib = weightsCurrent.map((w,i)=> (w*Sw[i])/portVar); // somme = 1
+  const order = list.map((a,i)=>({a, w:weightsCurrent[i], rc:riskContrib[i]})).sort((x,y)=>y.rc-x.rc);
+  document.getElementById('riskContribWrap').innerHTML =
+    `<div class="risk-bar-row" style="font-size:11px;color:var(--text-faint);font-weight:600;"><span></span><span></span><span>Poids</span><span>Risque</span></div>` +
+    order.map(o=>`
+      <div class="risk-bar-row">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${o.a.name}">${o.a.name}</span>
+        <div class="risk-bar-track">
+          <div class="risk-bar-fill weight" style="width:${Math.min(100,Math.max(0,o.w*100))}%;"></div>
+        </div>
+        <span class="mono">${(o.w*100).toFixed(1)}%</span>
+        <span class="mono" style="color:${o.rc>o.w+0.03?'var(--rose)':(o.rc<o.w-0.03?'var(--teal)':'var(--text-dim)')};">${(o.rc*100).toFixed(1)}%</span>
+      </div>`).join('') +
+    `<div class="note" style="margin-top:6px;">Barre = poids en capital. La dernière colonne (part de la volatilité totale du portefeuille) est en <span style="color:var(--rose);">rouge</span> quand un fonds pèse plus dans le risque que dans le capital investi, en <span style="color:var(--teal);">vert</span> quand c'est l'inverse.</div>`;
+
+  // --- Score de diversification effective (valeurs propres de la matrice de corrélation) ---
+  const {values} = jacobiEigen(corr, 100);
+  const sumL = values.reduce((a,b)=>a+b,0); // ≈ n pour une matrice de corrélation
+  const sumL2 = values.reduce((a,b)=>a+b*b,0);
+  const effectiveBets = (sumL*sumL)/Math.max(sumL2,1e-9);
+  document.getElementById('diversificationScore').textContent = effectiveBets.toFixed(1) + ' pari' + (effectiveBets>=1.05?'s':'') + ' indépendant' + (effectiveBets>=1.05?'s':'');
+  document.getElementById('diversificationNote').textContent = `Sur ${n} fonds sélectionnés (1 = aucune diversification effective malgré ${n} lignes dans le tableau, ${n} = fonds parfaitement indépendants entre eux).`;
+
+  // --- VaR / CVaR à 1 an (hypothèse gaussienne — sous-estime le risque réel) ---
+  const ret = vDot(weightsCurrent, mu);
+  const z95 = 1.645, phi95 = 0.10314; // densité de la loi normale standard en z=1.645
+  const varPct = -(ret - z95*portVol);
+  const cvarPct = -(ret - portVol*(phi95/0.05));
+  document.getElementById('varValue').textContent = (varPct*100).toFixed(1)+'%';
+  document.getElementById('cvarValue').textContent = (cvarPct*100).toFixed(1)+'%';
+}
+
+/* =====================================================================
+   9bis2. FRONTIÈRE EFFICIENTE RÉELLE (courbe, pas seulement le nuage)
+   ===================================================================== */
+async function renderEfficientFrontierCurve(list, mu, Sigma, objectiveType, param){
+  if(!frontierChart) return;
+  const vols = Sigma.map((row,i)=>Math.sqrt(Math.max(row[i],1e-9)));
+  const minVolGuess = Math.min(...vols)*0.7;
+  const maxVolGuess = Math.max(...vols)*1.05;
+  const nSteps = 12;
+  const curvePoints = [];
+  for(let i=0;i<nSteps;i++){
+    const targetVol = minVolGuess + (maxVolGuess-minVolGuess)*i/(nSteps-1);
+    const objective = makeObjective('maxReturnAtVol', mu, Sigma, {targetVol});
+    const best = cmaes(objective, list.length, {maxGen:60});
+    const w = softmax(best.x);
+    const ret = vDot(w, mu);
+    const vol = Math.sqrt(Math.max(vDot(w, matVec(Sigma,w)), 1e-9));
+    curvePoints.push({x: vol*100, y: ret*100});
+  }
+  curvePoints.sort((a,b)=>a.x-b.x);
+  frontierChart.data.datasets[4] = {
+    label:'Frontière efficiente', data: curvePoints, type:'line', showLine:true,
+    borderColor:'#2fd7b3', backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.25, order:-1,
+  };
+  frontierChart.update();
+}
+
+/* =====================================================================
+   9bis3. SCÉNARIOS DE CRISE (historique réel appliqué à l'allocation actuelle)
+   ===================================================================== */
+const CRISIS_PERIODS = [
+  { key:'gfc', label:'Crise financière 2008 (pic à creux, oct. 2007 – mars 2009)', start:'2007-10-09', end:'2009-03-09' },
+  { key:'covid', label:'Krach COVID-19 (févr.–mars 2020)', start:'2020-02-19', end:'2020-03-23' },
+  { key:'rates2022', label:'Remontée des taux 2022 (janv. – oct. 2022)', start:'2022-01-03', end:'2022-10-12' },
+];
+function nearestPrice(dates, closes, targetDate, direction){
+  if(direction==='before'){
+    let idx=-1;
+    for(let i=0;i<dates.length;i++){ if(dates[i]<=targetDate) idx=i; else break; }
+    return idx>=0 ? closes[idx] : null;
+  }
+  for(let i=0;i<dates.length;i++){ if(dates[i]>=targetDate) return closes[i]; }
+  return null;
+}
+function renderCrisisScenarios(){
+  const panel = document.getElementById('crisisPanel');
+  const wrap = document.getElementById('crisisWrap');
+  if(!currentPortfolio || !currentPortfolio.histories){ panel.style.display='none'; return; }
+  panel.style.display = 'block';
+  const { list, weightsCurrent, histories } = currentPortfolio;
+
+  const rows = CRISIS_PERIODS.map(crisis=>{
+    const perFundOk = list.map((a)=>{
+      const h = histories.find(x=>x.id===a.id);
+      if(!h || h.dates[0] > crisis.start) return null;
+      const p0 = nearestPrice(h.dates, h.closes, crisis.start, 'before') ?? nearestPrice(h.dates, h.closes, crisis.start, 'after');
+      const p1 = nearestPrice(h.dates, h.closes, crisis.end, 'before');
+      if(p0==null || p1==null || p0<=0) return null;
+      return p1/p0 - 1;
+    });
+    const includedIdx = list.map((a,i)=>i).filter(i=>perFundOk[i]!=null);
+    const excludedNames = list.filter((a,i)=>perFundOk[i]==null).map(a=>a.name);
+    if(includedIdx.length===0) return { ...crisis, ret:null, excludedNames };
+    const includedWeightSum = includedIdx.reduce((s,i)=>s+weightsCurrent[i],0);
+    const ret = includedWeightSum>0
+      ? includedIdx.reduce((s,i)=> s + (weightsCurrent[i]/includedWeightSum)*perFundOk[i], 0)
+      : null;
+    return { ...crisis, ret, excludedNames };
+  });
+
+  wrap.innerHTML = rows.map(r=>`
+    <div class="metric-card" style="margin-bottom:10px;">
+      <div class="label">${r.label}</div>
+      <div class="value" style="color:${r.ret==null?'var(--text-faint)':(r.ret>=0?'var(--teal)':'var(--rose)')};">${r.ret!=null ? (r.ret>=0?'+':'')+(r.ret*100).toFixed(1)+'%' : 'Non calculable'}</div>
+      ${r.excludedNames.length ? `<div class="note" style="margin-top:6px;margin-bottom:0;">${r.excludedNames.length===list.length ? "Aucun fonds sélectionné n'existait à cette période." : `Sans ${r.excludedNames.join(', ')} (pas encore lancé${r.excludedNames.length>1?'s':''} à l'époque) — poids redistribué sur le reste, résultat partiel.`}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 /* =====================================================================
@@ -2479,7 +2863,59 @@ function refreshPortfolioStatsAndChart(){
 
   portfolioSimData.portfolioValues = portfolioValues; // pour le graphique
   renderPortfolioHistoryChart();
+  renderRollingRiskChart(masterDates, portfolioValues);
 }
+
+function renderRollingRiskChart(masterDates, portfolioValues){
+  const panel = document.getElementById('rollingRiskPanel');
+  const wrap = document.getElementById('rollingRiskWrap');
+  panel.style.display = 'block';
+  const rebased = portfolioValues.map(v=> v!=null ? 100*(1+v/100) : null);
+  const windowWeeks = 52;
+  const rollingVol = [], rollingDD = [];
+  let peak = -Infinity;
+  for(let i=0;i<rebased.length;i++){
+    if(rebased[i]!=null && rebased[i]>peak) peak = rebased[i];
+    rollingDD.push(peak>0 && rebased[i]!=null ? (rebased[i]/peak-1)*100 : null);
+    if(i>=windowWeeks){
+      const slice = rebased.slice(i-windowWeeks, i+1);
+      const rets=[];
+      for(let k=1;k<slice.length;k++){ if(slice[k]!=null && slice[k-1]!=null && slice[k-1]>0) rets.push(Math.log(slice[k]/slice[k-1])); }
+      if(rets.length>=20){
+        const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+        const variance = rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/rets.length;
+        rollingVol.push(Math.sqrt(Math.max(variance,0)*52)*100);
+      } else rollingVol.push(null);
+    } else rollingVol.push(null);
+  }
+
+  if(typeof Chart === 'undefined'){
+    wrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée).</div>';
+    return;
+  }
+  const hasEnoughForVol = rollingVol.some(v=>v!=null);
+  wrap.innerHTML = '<div class="chart-box tall"><canvas id="rollingRiskCanvas"></canvas></div>' +
+    `<div class="note" style="margin-top:8px;">Volatilité glissante calculée sur une fenêtre de 52 semaines${hasEnoughForVol?'':' — pas encore assez d\'historique simulé (moins d\'un an) pour l\'afficher'}. La perte depuis le plus haut est, elle, disponible dès le début.</div>`;
+  const ctx = document.getElementById('rollingRiskCanvas');
+  if(rollingRiskChart) rollingRiskChart.destroy();
+  rollingRiskChart = new Chart(ctx, {
+    type:'line',
+    data:{ datasets:[
+      { label:'Volatilité glissante 1 an (%)', data: masterDates.map((d,i)=>({x:d,y:rollingVol[i]})), borderColor:'#f2b85c', backgroundColor:'transparent', pointRadius:0, borderWidth:2, yAxisID:'y', spanGaps:false },
+      { label:'Perte depuis le plus haut (%)', data: masterDates.map((d,i)=>({x:d,y:rollingDD[i]})), borderColor:'#f2617a', backgroundColor:'rgba(242,97,122,0.12)', fill:true, pointRadius:0, borderWidth:1.5, yAxisID:'y1', spanGaps:true },
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{color:'#8993a4', boxWidth:8, boxHeight:8, font:{size:10}}} },
+      scales:{
+        x:{type:'category', grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
+        y:{position:'left', title:{display:true,text:'Volatilité (%)',color:'#5c6675'}, grid:{color:'#1a212a'}, ticks:{color:'#5c6675',font:{size:10}}},
+        y1:{position:'right', max:0, title:{display:true,text:'Drawdown (%)',color:'#5c6675'}, grid:{display:false}, ticks:{color:'#5c6675',font:{size:10}}},
+      }
+    }
+  });
+}
+let rollingRiskChart;
 
 async function renderPortfolioHistoryChart(){
   const wrap = document.getElementById('portfolioHistoryWrap');
