@@ -588,7 +588,7 @@ tbody tr.selected{background:rgba(47,215,179,0.06);}
 
     <div class="panel" id="rollingWeightsPanel" style="display:none;">
       <div class="panel-title">Sensibilité de l'allocation à la période de calcul</div>
-      <div class="note" id="rollingWeightsNote" style="margin-bottom:10px;">Pour chaque durée d'historique testée (1 an, 2 ans, … jusqu'au maximum commun disponible), l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible au nombre d'années de cours pris en compte.</div>
+      <div class="note" id="rollingWeightsNote" style="margin-bottom:10px;">Découpe l'historique commun disponible en plusieurs durées et relance l'optimisation pour chacune, avec le même objectif, afin d'observer si l'allocation optimale est stable ou sensible à la quantité de cours pris en compte.</div>
       <div id="rollingWeightsWrap"><div class="placeholder">Lancez l'optimisation ci-dessus pour voir cette analyse.</div></div>
     </div>
 
@@ -1817,48 +1817,107 @@ async function runRollingAnalysis(list, histories, objectiveType, param){
   perfPanel.style.display = 'block';
   weightsWrap.innerHTML = '<div class="note">Calcul de la sensibilité à la période (plusieurs ré-optimisations)…</div>';
   perfWrap.innerHTML = '';
+  document.getElementById('rollingWeightsNote').textContent = "Découpe l'historique disponible en plusieurs durées et relance l'optimisation pour chacune, avec le même objectif. Un fonds pas encore lancé à une date donnée est traité comme absent (poids nul) pour cette période uniquement, plutôt que de limiter toute l'analyse à sa seule date de création.";
 
-  const {masterDates: fullDates} = alignSeries(histories, null, null);
-  const totalYears = (new Date(fullDates[fullDates.length-1]) - new Date(fullDates[0])) / (1000*3600*24*365.25);
-
-  if(totalYears < 0.15){
-    weightsWrap.innerHTML = '<div class="placeholder">Historique commun trop court entre ces fonds pour une analyse de sensibilité.</div>';
+  if(histories.length < 2){
+    weightsWrap.innerHTML = '<div class="placeholder">Il faut au moins 2 fonds pour cette analyse.</div>';
     perfWrap.innerHTML = '';
     return;
   }
 
-  // Grille proportionnelle plutôt que "1 an, 2 ans, …" : on découpe la durée
-  // commune disponible en 10 points régulièrement espacés (ex. si 2 ans
-  // d'historique commun : 0,2 an, 0,4 an, … jusqu'à 2 ans). Ça garantit
-  // toujours ~10 points, que l'historique commun fasse 6 mois ou 20 ans —
-  // contrairement à un pas fixe d'1 an qui donnerait 0 ou 1 point sur un
-  // historique court.
-  const nPoints = Math.min(10, Math.max(4, Math.round(totalYears*4)));
-  const lookbacks = [];
-  for(let i=1;i<=nPoints;i++) lookbacks.push(totalYears * i / nPoints);
+  // Bornes de l'analyse :
+  // - fin = la date la plus ancienne parmi les DERNIÈRES dates de chaque
+  //   fonds (sécurité si l'un d'eux a un léger retard de cotation) ;
+  // - début (segment "historique long") = la date à laquelle AU MOINS 2
+  //   fonds existaient déjà (le 2e fonds le plus ancien vient de démarrer).
+  const commonEnd = histories.map(h=>h.dates[h.dates.length-1]).sort()[0];
+  const startDatesSorted = histories.map(h=>h.dates[0]).sort();
+  const secondOldestStart = startDatesSorted[1];
+  const youngestStart = startDatesSorted[startDatesSorted.length-1];
+
+  const endObj = new Date(commonEnd);
+
+  // Deux segments, pour ne pas perdre de vue le fonds le plus jeune :
+  // - segment "récent" : de sa date de lancement à aujourd'hui, avec TOUS
+  //   les fonds (y compris lui) — sinon un fonds très jeune n'apparaîtrait
+  //   JAMAIS dans l'analyse si les points étaient uniquement espacés sur
+  //   les nombreuses années d'historique des fonds plus anciens.
+  // - segment "historique long" : du 2e fonds le plus ancien jusqu'à la
+  //   date de lancement du plus jeune, avec seulement les fonds déjà nés.
+  const recentSegStart = new Date(youngestStart);
+  const recentSegWeeks = Math.max(0, (endObj-recentSegStart)/(1000*3600*24*7));
+  const longSegStart = new Date(secondOldestStart);
+  const longSegEnd = new Date(youngestStart);
+  const longSegWeeks = Math.max(0, (longSegEnd-longSegStart)/(1000*3600*24*7));
+  const totalWeeks = recentSegWeeks + longSegWeeks;
+
+  if(totalWeeks < 8){
+    weightsWrap.innerHTML = '<div class="placeholder">Même en excluant les fonds pas encore lancés aux dates les plus anciennes, il n\'y a pas assez d\'historique commun entre au moins 2 fonds pour cette analyse.</div>';
+    perfWrap.innerHTML = '';
+    return;
+  }
+
+  const nPoints = Math.min(10, Math.max(2, Math.floor(totalWeeks/8)));
+  // Répartition proportionnelle des points entre les deux segments, avec au
+  // moins 1 point dans le segment récent s'il fait au moins 8 semaines (pour
+  // garantir que le fonds le plus jeune apparaisse au moins une fois).
+  let nRecent = recentSegWeeks>=8 ? Math.max(1, Math.round(nPoints*recentSegWeeks/totalWeeks)) : 0;
+  let nLong = Math.max(0, nPoints - nRecent);
+  if(nLong===0 && longSegWeeks>=8){ nLong=1; nRecent=Math.max(0,nPoints-1); }
+
+  const cutoffs = [];
+  for(let i=1;i<=nLong;i++){
+    const frac = i/nLong; // i=1 -> proche de la naissance du + jeune fonds ; i=nLong -> le plus loin possible
+    cutoffs.push(new Date(longSegEnd.getTime() - frac*(longSegEnd.getTime()-longSegStart.getTime())));
+  }
+  for(let i=1;i<=nRecent;i++){
+    const frac = i/nRecent; // i=1 -> fenêtre courte et récente ; i=nRecent -> depuis la naissance du + jeune fonds
+    cutoffs.push(new Date(endObj.getTime() - frac*(endObj.getTime()-recentSegStart.getTime())));
+  }
 
   const rows = [];
-  for(const yearsBack of lookbacks){
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - Math.round(yearsBack*365.25));
-    const sinceStr = cutoff.toISOString().slice(0,10);
-    const {aligned} = alignSeries(histories, sinceStr, null);
+  for(const cutoffObj of cutoffs){
+    const cutoffStr = cutoffObj.toISOString().slice(0,10);
+
+    // Fonds "éligibles" à cette fenêtre : ceux déjà lancés à la date de coupure.
+    const eligible = histories.filter(h => h.dates[0] <= cutoffStr);
+    if(eligible.length < 2) continue;
+
+    const {aligned} = alignSeries(eligible, cutoffStr, commonEnd);
     const stats = muSigmaFromAlignedPrices(aligned, 52);
     if(!stats) continue;
+
     const objective = makeObjective(objectiveType, stats.mu, stats.Sigma, param);
-    const best = cmaes(objective, list.length, {maxGen:70});
-    const w = softmax(best.x);
-    const ret = vDot(w, stats.mu);
-    const vol = Math.sqrt(Math.max(vDot(w, matVec(stats.Sigma,w)), 1e-9));
-    rows.push({ years:yearsBack, weights:w, ret, vol, sharpe: vol>1e-6?ret/vol:null });
+    const best = cmaes(objective, eligible.length, {maxGen:70});
+    const wEligible = softmax(best.x);
+
+    // Remise à l'échelle sur la liste complète des fonds : poids nul pour
+    // ceux qui n'existaient pas encore à cette date.
+    const wFull = list.map(a=>{
+      const idx = eligible.findIndex(h=>h.id===a.id);
+      return idx>=0 ? wEligible[idx] : 0;
+    });
+
+    const ret = vDot(wEligible, stats.mu);
+    const vol = Math.sqrt(Math.max(vDot(wEligible, matVec(stats.Sigma,wEligible)), 1e-9));
+    const years = (endObj-cutoffObj)/(1000*3600*24*365.25);
+    rows.push({ years, weights:wFull, ret, vol, sharpe: vol>1e-6?ret/vol:null, nExcluded: list.length-eligible.length });
   }
+  // Les deux segments (récent puis historique long) ne sont pas générés dans
+  // l'ordre chronologique : on trie explicitement du plus court au plus
+  // long, pour que l'affichage gauche(passé)→droite(aujourd'hui) reste correct.
+  rows.sort((a,b)=> a.years-b.years);
 
   if(rows.length < 2){
     weightsWrap.innerHTML = '<div class="placeholder">Pas assez de durées différentes calculables pour tracer cette analyse (historique commun trop court ou trop irrégulier).</div>';
     perfWrap.innerHTML = '';
     return;
   }
-
-  document.getElementById('rollingWeightsNote').textContent = `L'historique commun disponible (${formatYearsLabel(totalYears)}) est découpé en ${rows.length} durées régulièrement espacées. Pour chacune, l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible à la quantité de cours pris en compte.`;
+  const anyExcluded = rows.some(r=>r.nExcluded>0);
+  const youngestFund = histories.reduce((y,h)=> h.dates[0]>y.dates[0]?h:y, histories[0]);
+  document.getElementById('rollingWeightsNote').textContent = anyExcluded
+    ? `L'historique disponible (jusqu'à ${formatYearsLabel(rows[rows.length-1].years)} en arrière) est découpé en ${rows.length} durées. Pour chacune, l'algorithme est relancé avec le même objectif ; un fonds pas encore lancé à cette date (ex. « ${youngestFund.name} », dont l'historique débute le ${youngestFund.dates[0]}) est traité comme absent — poids fixé à 0% pour cette période uniquement, sans limiter l'analyse aux autres fonds.`
+    : `L'historique disponible (${formatYearsLabel(rows[rows.length-1].years)}) est découpé en ${rows.length} durées régulièrement espacées. Pour chacune, l'algorithme est relancé avec le même objectif, en ne considérant que les cours de cette période. On observe ainsi si l'allocation optimale est stable ou très sensible à la quantité de cours pris en compte.`;
 
   if(typeof Chart === 'undefined'){
     weightsWrap.innerHTML = '<div class="placeholder">Graphique indisponible (bibliothèque bloquée).</div>';
@@ -1963,7 +2022,6 @@ function renderMonteCarlo(){
     const pick = (q)=> vals[Math.min(vals.length-1, Math.floor(q*vals.length))];
     percentiles.push({ p10:pick(0.10), p25:pick(0.25), p50:pick(0.50), p75:pick(0.75), p90:pick(0.90) });
   }
-  const labels = percentiles.map((_,t)=> (t/stepsPerYear).toFixed(1)+' an'+((t/stepsPerYear)>=2?'s':''));
   const totalInvested = initial + monthly*totalSteps;
   const final = percentiles[totalSteps];
 
@@ -1980,18 +2038,21 @@ function renderMonteCarlo(){
   wrap.innerHTML = '<div class="chart-box tall"><canvas id="monteCarloCanvas"></canvas></div>' +
     `<div class="note" style="margin-top:8px;">${nSims.toLocaleString('fr-FR')} trajectoires simulées à partir du rendement (${(ret*100).toFixed(1)}%/an) et de la volatilité (${(vol*100).toFixed(1)}%/an) du portefeuille actuellement affiché ci-dessus (poids optimaux ou manuels). Total versé sur la période : ${Math.round(totalInvested).toLocaleString('fr-FR')} €. Bande claire = 10ᵉ-90ᵉ percentile, bande foncée = 25ᵉ-75ᵉ percentile.</div>`;
 
+  // Axe X numérique (années, valeur réelle) plutôt que des étiquettes texte :
+  // Chart.js choisit alors lui-même des graduations rondes (0, 1, 2…) au lieu
+  // d'échantillonner des index de mois qui tombent sur des valeurs comme 1,1 an.
+  const toXY = (arr) => percentiles.map((p,t)=>({ x: t/stepsPerYear, y: arr(p) }));
   const ctx = document.getElementById('monteCarloCanvas');
   if(monteCarloChart) monteCarloChart.destroy();
   monteCarloChart = new Chart(ctx, {
     type:'line',
     data:{
-      labels,
       datasets:[
-        { label:'P10', data:percentiles.map(p=>p.p10), borderColor:'transparent', pointRadius:0, fill:false },
-        { label:'P10–P90', data:percentiles.map(p=>p.p90), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.10)', pointRadius:0, fill:'-1' },
-        { label:'P25', data:percentiles.map(p=>p.p25), borderColor:'transparent', pointRadius:0, fill:false },
-        { label:'P25–P75', data:percentiles.map(p=>p.p75), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.22)', pointRadius:0, fill:'-1' },
-        { label:'Médiane', data:percentiles.map(p=>p.p50), borderColor:'#2fd7b3', borderWidth:2, pointRadius:0, fill:false },
+        { label:'P10', data:toXY(p=>p.p10), borderColor:'transparent', pointRadius:0, fill:false },
+        { label:'P10–P90', data:toXY(p=>p.p90), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.10)', pointRadius:0, fill:'-1' },
+        { label:'P25', data:toXY(p=>p.p25), borderColor:'transparent', pointRadius:0, fill:false },
+        { label:'P25–P75', data:toXY(p=>p.p75), borderColor:'transparent', backgroundColor:'rgba(124,143,255,0.22)', pointRadius:0, fill:'-1' },
+        { label:'Médiane', data:toXY(p=>p.p50), borderColor:'#2fd7b3', borderWidth:2, pointRadius:0, fill:false },
       ]
     },
     options:{
@@ -2001,7 +2062,7 @@ function renderMonteCarlo(){
         tooltip:{callbacks:{label:(c)=> c.dataset.label==='Médiane' ? `Médiane : ${Math.round(c.parsed.y).toLocaleString('fr-FR')} €` : null}}
       },
       scales:{
-        x:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', maxTicksLimit:10, font:{size:10}}},
+        x:{type:'linear', min:0, max:years, grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, stepSize: years<=12 ? 1 : Math.ceil(years/12), callback:(v)=>Math.round(v)+' an'+(Math.round(v)>1?'s':'')}, title:{display:true,text:'Horizon',color:'#5c6675'}},
         y:{grid:{color:'#1a212a'}, ticks:{color:'#5c6675', font:{size:10}, callback:(v)=>Math.round(v).toLocaleString('fr-FR')+' €'}, title:{display:true, text:'Valeur du portefeuille (€)', color:'#5c6675'}}
       }
     }
