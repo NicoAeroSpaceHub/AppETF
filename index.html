@@ -770,7 +770,7 @@ ASSETS.forEach(a=>{
   a.sortino_1y=null; a.sortino_3y=null; a.sortino_5y=null; a.sortino_max=null;
   a.dd_1y=null; a.dd_3y=null; a.dd_5y=null; a.dd_max=null;
   a.last_price=null; a.last_price_eur=null; a.last_price_date=null; a.price_currency='EUR'; a.nativeCurrency='EUR';
-  a.dist_policy=null; a.dist_basis=null; a.quote_type=null;
+  a.dist_policy=null; a.dist_basis=null; a.quote_type=null; a.inceptionDate=null;
 });
 
 /* Fonds ajoutés manuellement par l'utilisateur (recherche Yahoo Finance),
@@ -844,6 +844,8 @@ const COLUMN_DEFS = [
   {id:'category',    label:'Zone',                 group:'Identité',       default:true,  sortKey:'category', render:a=>`<span class="cat-badge">${a.category}</span>`},
   {id:'quote_type',  label:'Type',                  group:'Identité',       default:false, sortKey:'quote_type',
     render:a=> a.quote_type ? `<span class="cat-badge" title="Renseigné par Yahoo Finance (info.quoteType)">${a.quote_type}</span>` : '<span class="num" style="color:var(--text-faint);">—</span>'},
+  {id:'inceptionDate', label:'Début du fonds',      group:'Identité',       default:false, sortKey:'inceptionDate',
+    render:a=> a.inceptionDate ? `<span class="num">${a.inceptionDate}</span>` : '<span class="num" style="color:var(--text-faint);">—</span>'},
   {id:'dist_policy', label:'Distribution',          group:'Identité',       default:true,  sortKey:null,
     render:a=> a.dist_policy
       ? `<span class="cat-badge" title="Déduit automatiquement : ${a.dist_basis||''}">${a.dist_policy}</span>`
@@ -2491,14 +2493,15 @@ function renderRiskAnalysis(){
   const { list, mu, Sigma, weightsCurrent } = currentPortfolio;
   const n = list.length;
 
-  // --- Matrice de corrélation ---
+  // --- Matrice de corrélation, triée par poids optimal décroissant ---
+  const weightOrder = list.map((a,i)=>i).sort((i,j)=> weightsCurrent[j]-weightsCurrent[i]);
   const vols = Sigma.map((row,i)=>Math.sqrt(Math.max(row[i],1e-12)));
   const corr = Sigma.map((row,i)=> row.map((v,j)=> v/(vols[i]*vols[j])));
   const shortNames = list.map(a=> a.name.length>16 ? a.name.slice(0,14)+'…' : a.name);
-  let html = '<table class="corr-table"><thead><tr><th></th>' + shortNames.map((nm,k)=>`<th title="${list[k].name}">${nm}</th>`).join('') + '</tr></thead><tbody>';
-  for(let i=0;i<n;i++){
-    html += `<tr><th class="corr-rowhead" title="${list[i].name}">${shortNames[i]}</th>`;
-    for(let j=0;j<n;j++){
+  let html = '<table class="corr-table"><thead><tr><th></th>' + weightOrder.map(k=>`<th title="${list[k].name} (${(weightsCurrent[k]*100).toFixed(1)}%)">${shortNames[k]}</th>`).join('') + '</tr></thead><tbody>';
+  for(const i of weightOrder){
+    html += `<tr><th class="corr-rowhead" title="${list[i].name} (${(weightsCurrent[i]*100).toFixed(1)}%)">${shortNames[i]}</th>`;
+    for(const j of weightOrder){
       const c = corr[i][j];
       html += `<td><div class="corr-cell" style="background:${corrColor(c)};" title="${list[i].name} × ${list[j].name} : ${c.toFixed(2)}">${c.toFixed(2)}</div></td>`;
     }
@@ -2764,9 +2767,18 @@ async function renderPortfolioHistory(list, weights){
     return;
   }
 
-  // Point de départ commun = la date la plus tardive parmi les débuts d'historique de chaque fonds.
-  const commonStart = ok.reduce((latest,s)=> s.dates[0]>latest ? s.dates[0] : latest, ok[0].dates[0]);
-  const base_ref = ok.reduce((shortest,s)=> s.dates.length<shortest.dates.length ? s : shortest, ok[0]);
+  // Point de départ commun = la date la plus tardive parmi les débuts
+  // d'historique des fonds ayant un poids NON NUL dans le portefeuille —
+  // un fonds à 0% (écarté par l'optimiseur) ne doit pas raccourcir
+  // artificiellement la période simulée même s'il est plus jeune que les
+  // autres, puisqu'il n'aurait de toute façon pas été acheté. On garde
+  // quand même son historique en mémoire (normSeries ci-dessous) pour le
+  // cas où un ajustement manuel des poids lui redonnerait du poids ensuite.
+  const WEIGHT_EPS = 0.001;
+  const activeForStart = ok.filter((s,i)=> weights[i] > WEIGHT_EPS);
+  const startRef = activeForStart.length ? activeForStart : ok; // repli si tous à ~0% (cas dégénéré)
+  const commonStart = startRef.reduce((latest,s)=> s.dates[0]>latest ? s.dates[0] : latest, startRef[0].dates[0]);
+  const base_ref = startRef.reduce((shortest,s)=> s.dates.length<shortest.dates.length ? s : shortest, startRef[0]);
   const masterDates = base_ref.dates.filter(d=>d>=commonStart);
 
   if(masterDates.length < 8){
@@ -2788,7 +2800,8 @@ async function renderPortfolioHistory(list, weights){
     });
   });
 
-  portfolioSimData = { masterDates, normSeries, names: ok.map(s=>s.name), weights: weights.slice(), commonStart };
+  const zeroWeightNames = ok.filter((s,i)=> !(weights[i] > WEIGHT_EPS)).map(s=>s.name);
+  portfolioSimData = { masterDates, normSeries, names: ok.map(s=>s.name), weights: weights.slice(), commonStart, zeroWeightNames };
 
   // Remplit le sélecteur de benchmark (une seule fois par jeu de résultats) avec
   // les fonds NE faisant PAS partie du portefeuille, pour éviter une comparaison contre lui-même.
@@ -2961,8 +2974,12 @@ async function renderPortfolioHistoryChart(){
     }catch(err){ benchError = err.message; }
   }
 
+  const zeroWeightNote = (portfolioSimData.zeroWeightNames && portfolioSimData.zeroWeightNames.length)
+    ? `<div class="note" style="margin-top:6px;">${portfolioSimData.zeroWeightNames.join(', ')} ${portfolioSimData.zeroWeightNames.length>1?'ont':'a'} un poids nul dans le portefeuille optimal et n'${portfolioSimData.zeroWeightNames.length>1?'ont':'a'} donc pas limité la période simulée, même si ${portfolioSimData.zeroWeightNames.length>1?'certains sont':'il est'} plus récent${portfolioSimData.zeroWeightNames.length>1?'s':''} que les autres.</div>`
+    : '';
   wrap.innerHTML = `<div class="chart-box tall"><canvas id="portfolioHistoryCanvas"></canvas></div>
     <div class="note" style="margin-top:8px;">Portefeuille simulé du ${masterDates[0]} à ${masterDates[masterDates.length-1]}, en variation % depuis le point de départ commun.</div>` +
+    zeroWeightNote +
     (benchError ? `<div class="note" style="color:var(--rose);margin-top:6px;">Benchmark « ${benchName} » indisponible : ${benchError}.</div>` : '');
 
   const colors = ['#7c8fff','#f2b85c','#f2617a','#5cc9f2','#c792ea','#9ad65c','#f28c5c','#8993a4'];
